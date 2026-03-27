@@ -1,0 +1,99 @@
+{
+  "name": "actionbook/rust-skills",
+  "version": "1f4becdcb88d1cbccc1880594479f28891102843",
+  "summary": "Auto-generated tile from GitHub (33 skills)",
+  "private": true,
+  "skills": {
+    "coding-guidelines": {
+      "path": "skills/coding-guidelines/SKILL.md"
+    },
+    "domain-cli": {
+      "path": "skills/domain-cli/SKILL.md"
+    },
+    "domain-web": {
+      "path": "skills/domain-web/SKILL.md"
+    },
+    "m01-ownership": {
+      "path": "skills/m01-ownership/SKILL.md"
+    },
+    "m02-resource": {
+      "path": "skills/m02-resource/SKILL.md"
+    },
+    "m03-mutability": {
+      "path": "skills/m03-mutability/SKILL.md"
+    },
+    "m04-zero-cost": {
+      "path": "skills/m04-zero-cost/SKILL.md"
+    },
+    "m05-type-driven": {
+      "path": "skills/m05-type-driven/SKILL.md"
+    },
+    "m06-error-handling": {
+      "path": "skills/m06-error-handling/SKILL.md"
+    },
+    "m07-concurrency": {
+      "path": "skills/m07-concurrency/SKILL.md"
+    },
+    "m09-domain": {
+      "path": "skills/m09-domain/SKILL.md"
+    },
+    "m10-performance": {
+      "path": "skills/m10-performance/SKILL.md"
+    },
+    "m11-ecosystem": {
+      "path": "skills/m11-ecosystem/SKILL.md"
+    },
+    "m12-lifecycle": {
+      "path": "skills/m12-lifecycle/SKILL.md"
+    },
+    "m13-domain-error": {
+      "path": "skills/m13-domain-error/SKILL.md"
+    },
+    "m14-mental-model": {
+      "path": "skills/m14-mental-model/SKILL.md"
+    },
+    "m15-anti-pattern": {
+      "path": "skills/m15-anti-pattern/SKILL.md"
+    },
+    "meta-cognition-parallel": {
+      "path": "skills/meta-cognition-parallel/SKILL.md"
+    },
+    "rust-call-graph": {
+      "path": "skills/rust-call-graph/SKILL.md"
+    },
+    "rust-code-navigator": {
+      "path": "skills/rust-code-navigator/SKILL.md"
+    },
+    "rust-deps-visualizer": {
+      "path": "skills/rust-deps-visualizer/SKILL.md"
+    },
+    "rust-learner": {
+      "path": "skills/rust-learner/SKILL.md"
+    },
+    "rust-refactor-helper": {
+      "path": "skills/rust-refactor-helper/SKILL.md"
+    },
+    "rust-skill-creator": {
+      "path": "skills/rust-skill-creator/SKILL.md"
+    },
+    "rust-symbol-analyzer": {
+      "path": "skills/rust-symbol-analyzer/SKILL.md"
+    },
+    "rust-trait-explorer": {
+      "path": "skills/rust-trait-explorer/SKILL.md"
+    },
+    "unsafe-checker": {
+      "path": "skills/unsafe-checker/SKILL.md"
+    }
+  },
+  "excludes": {
+    "skills": [
+      "domain-cloud-native",
+      "domain-embedded",
+      "domain-fintech",
+      "domain-iot",
+      "domain-ml",
+      "rust-daily"
+    ]
+  }
+}
