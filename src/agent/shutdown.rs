@@ -4,6 +4,13 @@ use tracing::info;
 /// Listen for OS shutdown signals (SIGINT, SIGTERM) and trigger cancellation.
 ///
 /// On Windows, only Ctrl+C is supported.
+///
+/// # Panics
+///
+/// Panics if the OS refuses to register signal handlers. This is called at
+/// agent startup — if we cannot listen for shutdown signals, there is no safe
+/// way to proceed.
+#[allow(clippy::expect_used)]
 pub async fn listen_for_shutdown(cancel: CancellationToken) {
     let signal = async {
         #[cfg(unix)]

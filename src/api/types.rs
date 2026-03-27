@@ -29,6 +29,7 @@ pub struct SessionConfig {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+#[non_exhaustive]
 pub enum AgentStatus {
     Online,
     Busy,
@@ -108,6 +109,7 @@ pub struct NextTaskResponse {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+#[non_exhaustive]
 pub enum TaskStatus {
     Running,
     Completed,
@@ -180,6 +182,7 @@ pub struct BenchmarkSubmission {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+#[non_exhaustive]
 pub enum ErrorSeverity {
     Warning,
     Error,

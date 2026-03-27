@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use clap::Parser;
 
-/// HashHive Agent — distributed hashcat agent for the HashHive platform.
+/// `HashHive` Agent — distributed hashcat agent for the `HashHive` platform.
 #[derive(Debug, Parser)]
 #[command(name = "hash_hive_agent", version, about)]
 pub struct Cli {
@@ -10,7 +10,7 @@ pub struct Cli {
     #[arg(short, long, env = "HASH_HIVE_CONFIG")]
     pub config: Option<PathBuf>,
 
-    /// HashHive server URL (overrides config file).
+    /// `HashHive` server URL (overrides config file).
     #[arg(long, env = "HASH_HIVE_SERVER_URL")]
     pub server_url: Option<String>,
 

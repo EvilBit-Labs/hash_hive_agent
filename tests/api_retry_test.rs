@@ -1,3 +1,10 @@
+#![allow(
+    clippy::expect_used,
+    clippy::unwrap_used,
+    clippy::panic,
+    clippy::wildcard_enum_match_arm
+)]
+
 use std::time::Duration;
 
 use hash_hive_agent::api::{ApiClient, ApiError, RetryConfig};

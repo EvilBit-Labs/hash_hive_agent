@@ -62,8 +62,8 @@ The project follows idiomatic Rust 2024 edition practices.
 
 - `backon` crate provides exponential backoff with jitter via `ExponentialBuilder` + `Retryable`.
 - `RetryConfig` in `src/api/client.rs` maps `AgentConfig` backoff fields to `backon` builder params.
-- Only `ApiError::Server` (5xx) and transient `ApiError::Request` (timeout/connect) are retryable; all others fail immediately.
-- `ApiClient::new(base_url, retry_config)` is the constructor; callers provide `RetryConfig` explicitly.
+- Only `ApiError::Server` (5xx) and transient `ApiError::Request` (timeout/connect) are retryable; `Auth`, `NotFound`, `Parse`, `Unexpected`, and `UrlParse` fail immediately.
+- `ApiClient::new(base_url, retry_config)` returns `Result<Self, ApiError>` — callers provide `RetryConfig` explicitly.
 - Never add default/optional constructor paths that bypass `AgentConfig` — all runtime config must flow through explicitly.
 - All public `ApiClient` methods use `with_retry` internally — retries are transparent to callers.
 

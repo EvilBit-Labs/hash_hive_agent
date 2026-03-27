@@ -34,7 +34,7 @@ pub async fn run_and_submit(client: &ApiClient, config: &AgentConfig) -> Result<
 
     // TODO: Run actual hashcat benchmarks (`hashcat -b --machine-readable`)
     // Parse output, build BenchmarkEntry vec, submit, and cache results.
-    info!("benchmark execution not yet implemented — skipping");
+    info!("benchmark execution not yet implemented \u{2014} skipping");
 
     Ok(())
 }

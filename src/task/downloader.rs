@@ -11,6 +11,7 @@ use tracing::{debug, info};
 ///
 /// Uses streaming to avoid buffering 100GB+ files in memory.
 /// Writes to a temporary file first, then atomically renames on success.
+#[allow(clippy::arithmetic_side_effects, clippy::as_conversions)]
 pub async fn download_file(
     client: &reqwest::Client,
     url: &str,
@@ -19,7 +20,7 @@ pub async fn download_file(
     let parsed: url::Url = url.parse().context("invalid download URL")?;
     let filename = parsed
         .path_segments()
-        .and_then(|s| s.last())
+        .and_then(|mut s| s.next_back())
         .unwrap_or("download");
 
     let dest_path = dest_dir.join(filename);
@@ -49,11 +50,11 @@ pub async fn download_file(
     let mut bytes_written: u64 = 0;
 
     while let Some(chunk) = stream.next().await {
-        let chunk = chunk.context("error reading download stream")?;
-        file.write_all(&chunk)
+        let data = chunk.context("error reading download stream")?;
+        file.write_all(&data)
             .await
             .context("error writing to temp file")?;
-        bytes_written += chunk.len() as u64;
+        bytes_written += data.len() as u64;
     }
 
     file.flush().await.context("failed to flush temp file")?;
@@ -81,7 +82,7 @@ pub async fn verify_checksum(path: &Path, expected_hex: &str) -> Result<bool> {
         .iter()
         .fold(String::with_capacity(64), |mut acc, byte| {
             use std::fmt::Write;
-            let _ = write!(acc, "{byte:02x}");
+            write!(acc, "{byte:02x}").ok();
             acc
         });
 

@@ -49,8 +49,7 @@ pub async fn execute(client: &ApiClient, config: &AgentConfig, task: TaskDescrip
     let hashcat_path = config
         .hashcat_path
         .as_ref()
-        .map(|p| p.to_owned())
-        .unwrap_or_else(|| "hashcat".into());
+        .map_or_else(|| "hashcat".into(), std::borrow::ToOwned::to_owned);
 
     let args = build_hashcat_args(&task, &task_dir);
     let session = Session::new(hashcat_path, task_id, args);
@@ -65,7 +64,7 @@ pub async fn execute(client: &ApiClient, config: &AgentConfig, task: TaskDescrip
     while let Some(event) = events.recv().await {
         match event {
             SessionEvent::Status(status) => {
-                let progress = parse_status_progress(&status);
+                let progress = Some(parse_status_progress(&status));
                 report_status(client, task_id, TaskStatus::Running, progress, None)
                     .await
                     .ok();
@@ -92,7 +91,11 @@ pub async fn execute(client: &ApiClient, config: &AgentConfig, task: TaskDescrip
                 let final_status = match exit_info.category {
                     ExitCategory::Success => TaskStatus::Completed,
                     ExitCategory::Exhausted => TaskStatus::Exhausted,
-                    _ => TaskStatus::Failed,
+                    ExitCategory::Aborted
+                    | ExitCategory::RuntimeError
+                    | ExitCategory::GpuError
+                    | ExitCategory::InternalError
+                    | ExitCategory::Unknown => TaskStatus::Failed,
                 };
 
                 let _results = if cracked.is_empty() {
@@ -127,6 +130,7 @@ pub async fn execute(client: &ApiClient, config: &AgentConfig, task: TaskDescrip
     Ok(())
 }
 
+#[allow(clippy::arithmetic_side_effects)]
 fn build_hashcat_args(task: &TaskDescriptor, task_dir: &std::path::Path) -> Vec<String> {
     let mut args = vec![
         "-m".to_owned(),
@@ -151,8 +155,8 @@ fn build_hashcat_args(task: &TaskDescriptor, task_dir: &std::path::Path) -> Vec<
     args
 }
 
-fn parse_status_progress(status: &serde_json::Value) -> Option<TaskProgress> {
-    Some(TaskProgress {
+fn parse_status_progress(status: &serde_json::Value) -> TaskProgress {
+    TaskProgress {
         keyspace_progress: status
             .get("progress")
             .and_then(|p| p.as_array())
@@ -169,15 +173,14 @@ fn parse_status_progress(status: &serde_json::Value) -> Option<TaskProgress> {
         speed: status
             .get("devices_status")
             .and_then(|d| d.as_array())
-            .map(|devices| {
+            .map_or(0.0, |devices| {
                 devices
                     .iter()
-                    .filter_map(|d| d.get("speed").and_then(|s| s.as_f64()))
+                    .filter_map(|d| d.get("speed").and_then(serde_json::Value::as_f64))
                     .sum()
-            })
-            .unwrap_or(0.0),
+            }),
         temperature: None,
-    })
+    }
 }
 
 async fn report_status(

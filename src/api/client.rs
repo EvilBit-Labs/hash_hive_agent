@@ -317,6 +317,7 @@ impl ApiClient {
 }
 
 #[cfg(test)]
+#[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests {
     use reqwest::StatusCode;
 

@@ -21,6 +21,7 @@ Known pitfalls and edge cases. Referenced from AGENTS.md.
 - `match_same_arms` is **warned** -- merge match arms with identical bodies using `|`.
 - `missing_const_for_fn` is **warned** -- add `const` to pure functions that qualify.
 - `redundant_closure` is **warned** -- use `.when(is_retryable)` not `.when(|e| is_retryable(e))`.
+- `expect_used`, `unwrap_used`, `panic`, `indexing_slicing` are **warned/denied** in production but allowed in `#[cfg(test)]` modules and integration tests via module-level `#[allow(...)]`.
 
 ## File Downloads
 

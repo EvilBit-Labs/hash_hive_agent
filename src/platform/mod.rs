@@ -8,10 +8,11 @@ mod windows;
 use crate::api::types::DeviceInfo;
 
 /// Collect current system metrics (CPU, memory, temperature).
+#[allow(clippy::as_conversions)]
 pub fn collect_device_info() -> DeviceInfo {
     let sys = sysinfo::System::new_all();
 
-    let cpu_usage = sys.global_cpu_usage() as f64;
+    let cpu_usage = f64::from(sys.global_cpu_usage());
 
     let total_mem = sys.total_memory() as f64;
     let used_mem = sys.used_memory() as f64;
@@ -29,7 +30,7 @@ pub fn collect_device_info() -> DeviceInfo {
 }
 
 /// Return the platform identifier string matching the server's expectations.
-pub fn platform_name() -> &'static str {
+pub const fn platform_name() -> &'static str {
     #[cfg(target_os = "linux")]
     {
         "linux"
@@ -49,7 +50,7 @@ pub fn platform_name() -> &'static str {
 }
 
 /// Attempt to read GPU temperature. Returns `None` if unavailable.
-fn gpu_temperature() -> Option<f64> {
+const fn gpu_temperature() -> Option<f64> {
     // GPU temperature reading is platform-specific and often requires
     // nvidia-smi, rocm-smi, or similar tooling. Stubbed for now.
     None

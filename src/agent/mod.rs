@@ -32,7 +32,7 @@ pub async fn run(config: AgentConfig) -> Result<()> {
 
     client.set_session_token(session.session_token);
 
-    if let Some(cfg) = &session.config {
+    if let Some(ref cfg) = session.config {
         info!(
             agent_id = cfg.agent_id,
             project_id = cfg.project_id,
@@ -68,7 +68,7 @@ pub async fn run(config: AgentConfig) -> Result<()> {
                     error!(error = %e, "task execution failed");
                 }
             }
-            PollResult::Idle => continue,
+            PollResult::Idle => {}
             PollResult::Cancelled => {
                 info!("task polling cancelled, shutting down");
                 break;

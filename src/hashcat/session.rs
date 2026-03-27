@@ -16,6 +16,7 @@ const SESSION_PREFIX: &str = "attack-";
 
 /// Events emitted by a running hashcat session.
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum SessionEvent {
     /// A classified message from stdout or stderr.
     Message(ClassifiedMessage),
@@ -28,29 +29,30 @@ pub enum SessionEvent {
 /// A managed hashcat subprocess.
 pub struct Session {
     binary_path: PathBuf,
-    session_name: String,
+    name: String,
     args: Vec<String>,
 }
 
 impl Session {
     /// Create a new hashcat session.
     pub fn new(binary_path: PathBuf, task_id: i64, args: Vec<String>) -> Self {
-        let session_name = format!("{SESSION_PREFIX}{task_id}");
+        let name = format!("{SESSION_PREFIX}{task_id}");
         Self {
             binary_path,
-            session_name,
+            name,
             args,
         }
     }
 
     /// The session name used for hashcat's `--session` flag.
     pub fn session_name(&self) -> &str {
-        &self.session_name
+        &self.name
     }
 
     /// Start the hashcat process and stream events through the returned channel.
     ///
     /// The process is killed when `cancel` is triggered.
+    #[allow(clippy::unused_async)]
     pub async fn start(
         &self,
         cancel: CancellationToken,
@@ -58,7 +60,7 @@ impl Session {
         let mut cmd = Command::new(&self.binary_path);
         cmd.args(&self.args)
             .arg("--session")
-            .arg(&self.session_name)
+            .arg(&self.name)
             .arg("--status-json")
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -66,7 +68,7 @@ impl Session {
 
         debug!(
             binary = %self.binary_path.display(),
-            session = %self.session_name,
+            session = %self.name,
             "starting hashcat"
         );
 
@@ -103,8 +105,8 @@ impl Session {
         });
 
         // Spawn stderr reader
-        let stderr_tx = tx.clone();
-        let stderr_cancel = cancel.clone();
+        let stderr_tx = tx;
+        let stderr_cancel = cancel;
         tokio::spawn(async move {
             let reader = BufReader::new(stderr);
             let mut lines = reader.lines();
@@ -115,6 +117,7 @@ impl Session {
                         match result {
                             Ok(Some(line)) => {
                                 if let Some(msg) = classify_line(&line) {
+                                    #[allow(clippy::let_underscore_must_use)]
                                     let _ = stderr_tx.send(SessionEvent::Message(msg)).await;
                                 }
                             }
@@ -177,12 +180,12 @@ impl Session {
         let entries = std::fs::read_dir(session_dir).context("failed to read session directory")?;
 
         for entry in entries {
-            let entry = entry?;
-            let name = entry.file_name();
+            let dir_entry = entry?;
+            let name = dir_entry.file_name();
             let name_str = name.to_string_lossy();
 
             if name_str.starts_with(SESSION_PREFIX) {
-                let path = entry.path();
+                let path = dir_entry.path();
                 if let Err(e) = std::fs::remove_file(&path) {
                     if e.kind() != std::io::ErrorKind::NotFound {
                         warn!(path = %path.display(), error = %e, "failed to remove orphaned session file");
@@ -197,6 +200,7 @@ impl Session {
     }
 }
 
+#[allow(clippy::let_underscore_must_use)]
 async fn handle_stdout_line(line: &str, tx: &mpsc::Sender<SessionEvent>) {
     // Try to parse as JSON status first
     let bytes = line.as_bytes();

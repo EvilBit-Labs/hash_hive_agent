@@ -2,6 +2,7 @@
 ///
 /// Negative codes are converted to unsigned 8-bit on Unix (e.g. -1 → 255).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum ExitCategory {
     Success,
     Exhausted,
@@ -21,6 +22,7 @@ pub struct ExitCodeInfo {
 }
 
 /// Normalize a Unix exit code: values 245-255 map to -11 through -1.
+#[allow(clippy::arithmetic_side_effects)]
 pub fn normalize_exit_code(code: i32) -> i32 {
     if (245..=255).contains(&code) {
         code - 256
