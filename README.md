@@ -93,29 +93,32 @@ The agent loads configuration in this order (later sources override earlier ones
 
 ## Architecture
 
-```text
-                    ┌─────────────┐
-                    │ HashHive    │
-                    │ Server API  │
-                    └──────┬──────┘
-                           │
-              ┌────────────┼────────────┐
-              │            │            │
-         Heartbeat    Task Polling   Benchmarks
-              │            │            │
-              └────────────┼────────────┘
-                           │
-                    ┌──────┴──────┐
-                    │   Agent     │
-                    │  Run Loop   │
-                    └──────┬──────┘
-                           │
-              ┌────────────┼────────────┐
-              │            │            │
-         Download     Run Hashcat   Report
-         Resources    Session       Results
-              │            │            │
-              └────────────┴────────────┘
+```mermaid
+graph TD
+    Server["HashHive Server API"]
+
+    Server <-->|REST| Agent["Agent Run Loop"]
+
+    Agent --> HB["Heartbeat"]
+    Agent --> Poll["Task Polling"]
+    Agent --> Bench["Benchmarks"]
+
+    Poll -->|task assigned| DL["Download Resources"]
+    DL -->|streaming I/O| HC["Run Hashcat Session"]
+    HC -->|cracks & progress| Report["Report Results"]
+
+    Report -->|POST /tasks/id/report| Server
+    HB -->|POST /heartbeat| Server
+    Bench -->|POST /benchmark| Server
+
+    style Server fill:#1e2030,stroke:#f5a97f,color:#cad3f5
+    style Agent fill:#1e2030,stroke:#8aadf4,color:#cad3f5
+    style HB fill:#24273a,stroke:#a6da95,color:#cad3f5
+    style Poll fill:#24273a,stroke:#a6da95,color:#cad3f5
+    style Bench fill:#24273a,stroke:#a6da95,color:#cad3f5
+    style DL fill:#24273a,stroke:#eed49f,color:#cad3f5
+    style HC fill:#24273a,stroke:#eed49f,color:#cad3f5
+    style Report fill:#24273a,stroke:#eed49f,color:#cad3f5
 ```
 
 | Module       | Purpose                                                               |
