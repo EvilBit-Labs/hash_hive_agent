@@ -48,6 +48,7 @@ repos:
             entry: mise x -- shellcheck
             language: system
             types: [shell]
+            exclude: ^\.tessl/
 
     - repo: https://github.com/bnjbvr/cargo-machete
       rev: v0.9.1
@@ -70,7 +71,7 @@ repos:
                 - mdformat-gfm-alerts
                 - mdformat-toc
             types: [markdown]
-            exclude: ^\.claude/
+            exclude: ^\.tessl/
 
     # Security audit for Rust dependencies (requires mise)
     - repo: local
