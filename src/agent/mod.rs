@@ -4,10 +4,11 @@ pub mod shutdown;
 
 use anyhow::{Context, Result};
 use tokio_util::sync::CancellationToken;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 use url::Url;
 
 use crate::api::ApiClient;
+use crate::api::types::{AgentErrorReport, ErrorSeverity};
 use crate::config::AgentConfig;
 use crate::task;
 
@@ -63,9 +64,19 @@ pub async fn run(config: AgentConfig) -> Result<()> {
     loop {
         match poll_for_task(&client, config.poll_interval, cancel.clone()).await? {
             PollResult::Task(descriptor) => {
-                info!(task_id = descriptor.id, "executing task");
+                let task_id = descriptor.id;
+                info!(task_id, "executing task");
                 if let Err(e) = task::execute(&client, &config, descriptor).await {
-                    error!(error = %e, "task execution failed");
+                    error!(error = %e, task_id, "task execution failed");
+                    let report = AgentErrorReport {
+                        severity: ErrorSeverity::Error,
+                        message: e.to_string(),
+                        context: None,
+                        task_id: Some(task_id),
+                    };
+                    if let Err(report_err) = client.report_error(&report).await {
+                        warn!(error = %report_err, task_id, "failed to report task error to server");
+                    }
                 }
             }
             PollResult::Idle => {}

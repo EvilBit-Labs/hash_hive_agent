@@ -402,4 +402,11 @@ mod tests {
         };
         assert!(!is_retryable(&err));
     }
+
+    #[test]
+    fn url_parse_error_is_not_retryable() {
+        let parse_err = url::Url::parse("://invalid").unwrap_err();
+        let err = ApiError::UrlParse(parse_err);
+        assert!(!is_retryable(&err));
+    }
 }

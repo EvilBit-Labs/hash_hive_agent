@@ -65,9 +65,11 @@ pub async fn execute(client: &ApiClient, config: &AgentConfig, task: TaskDescrip
         match event {
             SessionEvent::Status(status) => {
                 let progress = Some(parse_status_progress(&status));
-                report_status(client, task_id, TaskStatus::Running, progress, None)
-                    .await
-                    .ok();
+                if let Err(e) =
+                    report_status(client, task_id, TaskStatus::Running, progress, None).await
+                {
+                    warn!(error = %e, task_id, "failed to report task progress");
+                }
             }
             SessionEvent::Message(msg) => {
                 info!(
