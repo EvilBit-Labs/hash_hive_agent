@@ -45,6 +45,12 @@
     },
     "pantheon-ai/dockerfile-toolkit": {
       "version": "0.1.0"
+    },
+    "pantheon-ai/moscow-prioritization": {
+      "version": "0.1.1"
+    },
+    "pantheon-ai/software-design-principles": {
+      "version": "0.1.4"
     }
   }
 }
