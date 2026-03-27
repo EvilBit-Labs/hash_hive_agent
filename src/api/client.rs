@@ -12,7 +12,6 @@ use super::types::{
     CreateSessionResponse, ErrorResponse, HeartbeatRequest, NextTaskResponse, TaskReport,
     ZapResponse,
 };
-use crate::config::defaults::{DEFAULT_BACKOFF_BASE, DEFAULT_BACKOFF_MAX, DEFAULT_MAX_RETRIES};
 
 /// Configuration for exponential backoff retry behavior.
 #[derive(Debug, Clone, Copy)]
@@ -23,16 +22,6 @@ pub struct RetryConfig {
     pub backoff_max: Duration,
     /// Maximum number of retry attempts.
     pub max_retries: u32,
-}
-
-impl Default for RetryConfig {
-    fn default() -> Self {
-        Self {
-            backoff_base: DEFAULT_BACKOFF_BASE,
-            backoff_max: DEFAULT_BACKOFF_MAX,
-            max_retries: DEFAULT_MAX_RETRIES,
-        }
-    }
 }
 
 impl From<&crate::config::AgentConfig> for RetryConfig {
