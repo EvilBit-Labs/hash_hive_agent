@@ -1,0 +1,99 @@
+# .pre-commit-config.yaml
+
+repos:
+    # Standard code cleanup hooks (language agnostic)
+    - repo: https://github.com/pre-commit/pre-commit-hooks
+      rev: v6.0.0
+      hooks:
+          - id: check-added-large-files
+            args: ["--maxkb=10240"]
+          - id: check-case-conflict
+          - id: check-merge-conflict
+          - id: check-illegal-windows-names
+          - id: check-json
+            types: [json]
+          - id: check-toml
+            types: [toml]
+          - id: check-yaml
+            types: [yaml]
+            args: [--allow-multiple-documents]
+          - id: mixed-line-ending
+            args: [--fix=auto]
+          - id: check-vcs-permalinks
+
+    - repo: https://github.com/FeryET/pre-commit-rust
+      rev: v1.2.1
+      hooks:
+          - id: fmt
+            types: [rust]
+          - id: clippy
+            args: ["--", "-D", "warnings"]
+            types: [rust, cargo]
+          - id: cargo-check
+            types: [rust, cargo, cargo-lock]
+
+    # GitHub Actions validation
+    - repo: https://github.com/rhysd/actionlint
+      rev: v1.7.11
+      hooks:
+          - id: actionlint
+            files: ".github/workflows/"
+            types: [yaml]
+
+    # Shell script validation (local via mise)
+    - repo: local
+      hooks:
+          - id: shellcheck
+            name: ShellCheck
+            entry: mise x -- shellcheck
+            language: system
+            types: [shell]
+
+    - repo: https://github.com/bnjbvr/cargo-machete
+      rev: v0.9.1
+      hooks:
+          - id: cargo-machete
+
+    # Markdown formatting
+    - repo: https://github.com/hukkin/mdformat
+      rev: 1.0.0
+      hooks:
+          - id: mdformat
+            additional_dependencies:
+                - mdformat-gfm
+                - mdformat-config
+                - mdformat-footnote
+                - mdformat-front-matters
+                - mdformat-simple-breaks
+                - mdformat-web
+                - mdformat-wikilink
+                - mdformat-gfm-alerts
+                - mdformat-toc
+            types: [markdown]
+            exclude: ^\.claude/
+
+    # Security audit for Rust dependencies (requires mise)
+    - repo: local
+      hooks:
+          - id: cargo-audit
+            name: cargo-audit
+            entry: mise x -- cargo audit
+            language: system
+            pass_filenames: false
+            types: [cargo, cargo-lock]
+
+    - repo: https://github.com/DevinR528/cargo-sort
+      rev: v2.1.1
+      hooks:
+          - id: cargo-sort
+            types: [cargo]
+
+    # Ensure mise.lock stays in sync with mise.toml
+    - repo: local
+      hooks:
+          - id: mise-lock-check
+            name: mise-lock-check
+            entry: bash -c 'mise lock && git diff --exit-code mise.lock || { echo "mise.lock is out of date — stage the updated mise.lock"; exit 1; }'
+            language: system
+            pass_filenames: false
+            files: ^mise\.toml$
