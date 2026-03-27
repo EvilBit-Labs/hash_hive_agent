@@ -26,6 +26,18 @@ Known pitfalls and edge cases. Referenced from AGENTS.md.
 - Hashcat session file location varies by OS: `~/.local/share/hashcat/sessions/` (Linux), `~/.hashcat/sessions/` (legacy), or next to the binary (Windows).
 - `os.Symlink` equivalents require elevated privileges on Windows -- test helpers should skip symlink tests on Windows.
 
+## Pre-commit Hooks
+
+- `rustfmt`, `mdformat`, and `cargo-sort` hooks auto-fix files on first run, causing the commit to fail. Re-stage modified files and retry.
+- `cargo-sort` hook rev may auto-update in `.pre-commit-config.yaml` -- stage the updated config alongside your commit.
+- `cargo-machete` detects unused dependencies -- remove them before committing.
+
+## Dependency Version Constraints
+
+- `sysinfo` 0.36+ requires Rust 1.86+, 0.38+ requires 1.88+ -- pin to `0.35` while `rust-version = "1.85"`.
+- `reqwest` 0.13 renamed feature `rustls-tls` to `rustls` -- use `rustls` in Cargo.toml features.
+- `sha2` 0.11 changed `finalize()` return type -- output no longer implements `LowerHex`. Format bytes manually with `write!(acc, "{byte:02x}")`.
+
 ## Exit Codes
 
 - Hashcat negative exit codes (e.g., -11) arrive as unsigned 8-bit on Unix (e.g., 245). `normalize_exit_code` in `hashcat/exit_code.rs` converts 245-255 back to -11 through -1 before classification.

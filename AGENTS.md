@@ -102,3 +102,15 @@ Conventional Commits: `<type>(<scope>): <description>`. Types: `feat`, `fix`, `d
 ### Changelog
 
 `CHANGELOG.md` is auto-generated from commit messages using `git-cliff` (`just changelog`).
+
+### EvilBit-Labs Conventions
+
+This project follows the shared conventions from libmagic-rs, mmap-guard, stringy, token-privilege, and daemoneye:
+
+- `unsafe_code = "forbid"` and `unwrap_used = "deny"` in `[workspace.lints]`.
+- `cargo-sort` enforces dependency ordering in Cargo.toml.
+- `cargo-deny` bans `openssl` and `git2` — use `rustls` and `gix` instead.
+- `mise.toml` manages all dev tooling — never install tools manually.
+- `justfile` provides all dev commands — `just ci-check` for full local CI parity.
+- `release-plz.toml` + `cargo-dist` for releases — `git-cliff` for changelog.
+- Pre-commit hooks run `rustfmt`, `clippy`, `cargo-check`, `cargo-machete`, `mdformat`, `cargo-audit`, `cargo-sort`, and `actionlint`.
