@@ -48,7 +48,7 @@ repos:
             entry: mise x -- shellcheck
             language: system
             types: [shell]
-            exclude: ^\.tessl/
+            exclude: ^(\.tessl/|\.claude/skills/)
 
     - repo: https://github.com/bnjbvr/cargo-machete
       rev: v0.9.1
