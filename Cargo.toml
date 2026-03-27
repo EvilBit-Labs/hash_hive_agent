@@ -1,0 +1,245 @@
+[package]
+name = "hash_hive_agent"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+authors = ["UncleSp1d3r <unclesp1d3r@evilbitlabs.io>"]
+description = "Distributed hashcat agent for the HashHive platform"
+license = "Apache-2.0"
+repository = "https://github.com/EvilBit-Labs/hash_hive_agent"
+homepage = "https://evilbitlabs.io/hash_hive_agent"
+keywords = ["hashcat", "distributed", "cracking", "agent", "security"]
+categories = ["command-line-utilities"]
+readme = "README.md"
+exclude = [
+    # Directories
+    "/.github",
+    "/.git",
+    "/.vscode",
+    "/docs",
+    # CI / tooling config
+    "/.coderabbitai.yaml",
+    "/.editorconfig",
+    "/.markdownlint-cli2.jsonc",
+    "/.markdownlint.json",
+    "/.mdformat.toml",
+    "/.mergify.yml",
+    "/.pre-commit-config.yaml",
+    "/.prettierignore",
+    # Language version files
+    "/.bun-version",
+    "/.python-version",
+    # Build / release tooling
+    "about.hbs",
+    "about.toml",
+    "cliff.toml",
+    "codecov.yml",
+    "deny.toml",
+    "justfile",
+    "mise.lock",
+    "mise.toml",
+    "release-plz.toml",
+    "rust-toolchain.toml",
+    "rustfmt.toml",
+    # Docs shipped via docs.rs / repository, not the crate
+    "AGENTS.md",
+    "CLAUDE.md",
+    "CODE_OF_CONDUCT.md",
+    "CONTRIBUTING.md",
+    "GOTCHAS.md",
+    # Misc
+    "/.env.*",
+    "*.orig",
+]
+
+# Workspace lint configuration
+[workspace.lints.rust]
+# Security: Forbid unsafe code globally
+unsafe_code = "forbid"
+# Zero warnings policy
+warnings = "deny"
+
+[workspace.lints.clippy]
+# Pedantic clippy configuration with proper priorities
+correctness = { level = "deny", priority = -1 }
+suspicious  = { level = "warn", priority = -1 }
+pedantic    = { level = "warn", priority = -1 }
+nursery     = { level = "warn", priority = -1 }
+cargo       = { level = "warn", priority = -1 }
+
+# Security-focused linting
+as_conversions          = "warn"
+as_ptr_cast_mut         = "warn"
+cast_ptr_alignment      = "warn"
+float_cmp               = "warn"
+indexing_slicing        = "warn"
+arithmetic_side_effects = "warn"
+integer_division        = "warn"
+modulo_arithmetic       = "warn"
+expect_used             = "warn"
+
+# Security anti-patterns
+dbg_macro        = "warn"
+todo             = "warn"
+unimplemented    = "warn"
+unreachable      = "warn"
+panic            = "deny"
+unwrap_used      = "deny"
+exhaustive_enums = "warn"
+
+# Performance and correctness
+perf                           = { level = "warn", priority = -1 }
+await_holding_lock             = "deny"
+clone_on_ref_ptr               = "warn"
+create_dir                     = "warn"
+exit                           = "warn"
+filetype_is_file               = "warn"
+float_equality_without_abs     = "warn"
+if_then_some_else_none         = "warn"
+large_stack_arrays             = "warn"
+let_underscore_must_use        = "warn"
+lossy_float_literal            = "warn"
+map_err_ignore                 = "warn"
+match_same_arms                = "warn"
+missing_assert_message         = "warn"
+missing_docs_in_private_items  = "allow"
+mixed_read_write_in_expression = "warn"
+mutex_atomic                   = "warn"
+mutex_integer                  = "warn"
+non_ascii_literal              = "warn"
+non_send_fields_in_send_ty     = "warn"
+partial_pub_fields             = "warn"
+pattern_type_mismatch          = "warn"
+rc_buffer                      = "warn"
+rc_mutex                       = "warn"
+redundant_type_annotations     = "warn"
+ref_binding_to_reference       = "warn"
+same_name_method               = "warn"
+self_named_module_files        = "warn"
+semicolon_inside_block         = "warn"
+semicolon_outside_block        = "warn"
+shadow_reuse                   = "warn"
+shadow_same                    = "warn"
+shadow_unrelated               = "warn"
+str_to_string                  = "warn"
+string_add                     = "warn"
+string_add_assign              = "warn"
+string_lit_as_bytes            = "warn"
+string_slice                   = "warn"
+suspicious_operation_groupings = "warn"
+trailing_empty_array           = "warn"
+transmute_undefined_repr       = "warn"
+trivial_regex                  = "warn"
+undocumented_unsafe_blocks     = "deny"
+unnecessary_self_imports       = "warn"
+unseparated_literal_suffix     = "warn"
+unused_async                   = "warn"
+unused_peekable                = "warn"
+unused_rounding                = "warn"
+use_debug                      = "warn"
+verbose_file_reads             = "warn"
+wildcard_enum_match_arm        = "warn"
+zero_sized_map_values          = "warn"
+
+# Allow specific lints that are too noisy initially; revisit later
+missing_errors_doc       = "allow"
+missing_panics_doc       = "allow"
+must_use_candidate       = "allow"
+cast_possible_truncation = "allow"
+cast_precision_loss      = "allow"
+cast_sign_loss           = "allow"
+module_name_repetitions  = "allow"
+similar_names            = "allow"
+too_many_lines           = "allow"
+type_complexity          = "allow"
+async_yields_async       = "allow"
+large_futures            = "allow"
+result_large_err         = "allow"
+cargo_common_metadata    = "allow"
+multiple_crate_versions  = "allow"
+
+[[bin]]
+name = "hash-hive-agent"
+path = "src/main.rs"
+
+[dependencies]
+anyhow    = "1.0.102"
+
+# CLI
+clap = { version = "4.6.0", features = ["derive", "env"] }
+
+# Config
+config = "0.15.22"
+
+# Async streaming for large file downloads
+futures = "0.3.32"
+
+# Regex for hashcat output parsing
+regex = "1.12.3"
+
+# HTTP client
+reqwest = { version = "0.13.2", default-features = false, features = [
+    "rustls",
+    "json",
+    "stream",
+] }
+
+# Serialization
+serde      = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.149"
+
+# Checksums for download verification
+sha2 = "0.11.0"
+
+# Platform info
+sysinfo = "0.35"
+
+# Error handling
+thiserror = "2.0.18"
+# Async runtime
+tokio = { version = "1.50.0", features = [
+    "rt",
+    "rt-multi-thread",
+    "net",
+    "io-util",
+    "time",
+    "process",
+    "macros",
+    "sync",
+    "fs",
+    "signal",
+] }
+tokio-util = { version = "0.7.18", features = ["io"] }
+
+# Logging / tracing
+tracing            = "0.1.44"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter", "json"] }
+
+# URL handling
+url = { version = "2.5.8", features = ["serde"] }
+
+[dev-dependencies]
+assert_matches = "1.5.0"
+criterion      = "0.8.2"
+insta          = { version = "1.47.0", features = ["json"] }
+tempfile       = "3.27.0"
+tokio-test     = "0.4.5"
+wiremock       = "0.6.5"
+
+[lints]
+workspace = true
+
+[profile.release]
+lto             = "thin"
+codegen-units   = 1
+strip           = true
+overflow-checks = true
+
+[profile.dist]
+inherits        = "release"
+lto             = "thin"
+overflow-checks = true
+strip           = true
+
+[profile.dev]
+overflow-checks = true
