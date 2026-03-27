@@ -25,7 +25,7 @@ The agent is a long-lived CLI client interacting with the HashHive server API:
 7. **Zap Lists:** Fetch already-cracked hashes via `GET /tasks/{id}/zaps` to skip during processing.
 
 - All API interactions use the Agent API v1 contract (see `../hash_hive/packages/openapi/agent-api.yaml`).
-- Implement exponential backoff for failed API requests.
+- All API requests use exponential backoff with jitter for transient failures (see Retry / Backoff).
 
 ## Rust
 
@@ -57,6 +57,15 @@ The project follows idiomatic Rust 2024 edition practices.
 - Application errors: `anyhow` with `.context()` for actionable messages.
 - Never `unwrap()` or `expect()` in production code paths.
 - Use `?` propagation everywhere.
+
+### Retry / Backoff
+
+- `backon` crate provides exponential backoff with jitter via `ExponentialBuilder` + `Retryable`.
+- `RetryConfig` in `src/api/client.rs` maps `AgentConfig` backoff fields to `backon` builder params.
+- Only `ApiError::Server` (5xx) and transient `ApiError::Request` (timeout/connect) are retryable; all others fail immediately.
+- `ApiClient::new(base_url, retry_config)` is the constructor; callers provide `RetryConfig` explicitly.
+- Never add default/optional constructor paths that bypass `AgentConfig` — all runtime config must flow through explicitly.
+- All public `ApiClient` methods use `with_retry` internally — retries are transparent to callers.
 
 ### Concurrency
 
