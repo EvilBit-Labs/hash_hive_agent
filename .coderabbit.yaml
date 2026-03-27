@@ -1,0 +1,215 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+language: en-US
+tone_instructions: "Distributed hashcat agent in idiomatic Rust. Zero unsafe code, async tokio runtime, streaming I/O for 100GB+ files, cross-platform (Linux/macOS/Windows). Safety over performance, production reliability, modern Rust patterns."
+early_access: true
+enable_free_tier: true
+reviews:
+    profile: assertive
+    request_changes_workflow: true
+    high_level_summary: true
+    high_level_summary_placeholder: "@coderabbitai summary"
+    high_level_summary_in_walkthrough: true
+    auto_title_placeholder: "@coderabbitai"
+    auto_title_instructions: "Generate PR/MR titles following Conventional Commits format: type(scope): description. Use types: feat, fix, docs, style, refactor, perf, test, build, ci, chore. Use scopes: api, agent, hashcat, task, benchmark, config, platform, cli, testing. Keep descriptions concise and action-oriented."
+    review_status: true
+    commit_status: true
+    fail_commit_status: false
+    collapse_walkthrough: true
+    changed_files_summary: true
+    sequence_diagrams: true
+    estimate_code_review_effort: true
+    assess_linked_issues: true
+    related_issues: true
+    related_prs: true
+    suggested_labels: true
+    auto_apply_labels: true
+    suggested_reviewers: true
+    auto_assign_reviewers: false
+    in_progress_fortune: true
+    poem: true
+    labeling_instructions:
+        - label: "area:api"
+          instructions: "Apply when changes involve the API client, request/response types, error handling, or server communication"
+        - label: "area:hashcat"
+          instructions: "Apply when changes involve hashcat session management, output parsing, exit code classification, or command-line argument construction"
+        - label: "area:agent"
+          instructions: "Apply when changes involve the agent lifecycle, heartbeat loop, task polling, or graceful shutdown"
+        - label: "area:task"
+          instructions: "Apply when changes involve task execution, resource downloads, progress reporting, or crack result submission"
+        - label: "area:benchmark"
+          instructions: "Apply when changes involve benchmark execution, caching, or submission"
+        - label: "area:config"
+          instructions: "Apply when changes involve configuration loading, CLI flags, or environment variables"
+        - label: "area:platform"
+          instructions: "Apply when changes involve cross-platform abstractions, system metrics, or GPU temperature monitoring"
+        - label: "area:testing"
+          instructions: "Apply when changes involve test infrastructure, test coverage, or testing utilities"
+        - label: "area:ci"
+          instructions: "Apply when changes involve CI/CD workflows, release tooling, or Docker"
+    path_filters:
+        [
+            "src/**",
+            ".github/**",
+            "*.md",
+            "*.toml",
+            "*.yaml",
+            "*.yml",
+            "*.json",
+            "*.sh",
+            "justfile",
+            "Dockerfile",
+            "!target/**",
+            "!node_modules/**",
+        ]
+    path_instructions:
+        - path: "src/api/**"
+          instructions: "Focus on API contract correctness against the HashHive Agent API OpenAPI spec. Verify serde rename_all camelCase matches server expectations. Ensure error handling covers all HTTP status codes. No unwrap() or expect()."
+        - path: "src/agent/**"
+          instructions: "Review async lifecycle correctness: CancellationToken propagation, select! with cancellation, no time::sleep without cancellation guard. Verify shutdown heartbeat uses a non-cancellable request path."
+        - path: "src/hashcat/**"
+          instructions: "Review output parsing for colon-aware correctness (hash types contain colons). Verify both v6 and v7 hashcat output formats are handled. Ensure regex patterns are compiled at package level via LazyLock. Check exit code normalization for unsigned 8-bit Unix values."
+        - path: "src/task/**"
+          instructions: "Verify streaming downloads never buffer full files in memory. Check atomic file writes (temp + rename). Ensure cracked hash parsing handles colon-containing hash types. Review task cleanup on failure/cancellation."
+        - path: "src/benchmark/**"
+          instructions: "Verify atomic cache writes. Check that cache invalidation triggers on hashcat version change. Ensure benchmark output parsing handles all device types."
+        - path: "src/config/**"
+          instructions: "Review config precedence: CLI > env > file > defaults. Verify all durations use the humantime parser. Check that invalid values are rejected with clear error messages."
+        - path: "src/platform/**"
+          instructions: "Ensure platform-specific code is gated with #[cfg(target_os)]. Verify graceful fallbacks when GPU tools are unavailable. Check that sysinfo API usage matches the pinned version (0.35)."
+        - path: "src/main.rs"
+          instructions: "Review CLI argument definitions, tracing initialization, and config override logic. Ensure required fields (agent_token) are validated before entering the run loop."
+        - path: "Cargo.toml"
+          instructions: "Review dependency versions against rust-version (1.85) compatibility. Verify cargo-sort ordering. Check that workspace lint configuration matches EvilBit-Labs conventions (unsafe_code forbid, unwrap_used deny)."
+        - path: "justfile"
+          instructions: "Review build automation and development workflow. Ensure cross-platform compatibility (Windows PowerShell and Unix bash). Verify CI parity with GitHub Actions."
+    abort_on_close: true
+    disable_cache: false
+    auto_review:
+        enabled: true
+        auto_incremental_review: true
+        ignore_title_keywords: ["WIP", "draft", "do not merge"]
+        labels: ["rust", "area:testing"]
+        drafts: false
+        base_branches: ["main"]
+        ignore_usernames: []
+    finishing_touches:
+        docstrings:
+            enabled: true
+        unit_tests:
+            enabled: true
+    pre_merge_checks:
+        docstrings:
+            mode: warning
+            threshold: 85
+        title:
+            mode: warning
+            requirements: "Must follow Conventional Commits specification: type(scope): description. Types: feat, fix, docs, style, refactor, perf, test, build, ci, chore. Scopes: api, agent, hashcat, task, benchmark, config, platform, cli. Breaking changes indicated with ! in header or BREAKING CHANGE: in footer."
+        description:
+            mode: warning
+        issue_assessment:
+            mode: warning
+        custom_checks:
+            - name: "no-unsafe-check"
+              instructions: "Verify no unsafe code blocks are introduced. The project enforces unsafe_code = forbid at the workspace level. Any unsafe usage should be rejected."
+            - name: "no-unwrap-check"
+              instructions: "Verify no unwrap() or expect() calls in production code (src/**). Use ? with anyhow::Context for error propagation. unwrap() is only acceptable in #[cfg(test)] modules."
+            - name: "streaming-io-check"
+              instructions: "For any file download or resource handling code, verify that files are streamed to disk and never fully buffered in memory. Resources can exceed 100 GB."
+            - name: "cancellation-check"
+              instructions: "Verify that all long-running loops use tokio::select! with CancellationToken. No bare time::sleep without a cancellation guard. Dropped values during shutdown must be logged at warn level."
+            - name: "test-coverage-check"
+              instructions: "Verify adequate test coverage for new functionality. Include edge cases for hashcat output parsing (colon-containing hashes, v6 vs v7 formats). Test error handling paths."
+    tools:
+        ast-grep:
+            rule_dirs: []
+            util_dirs: []
+            essential_rules: true
+            packages: []
+        shellcheck:
+            enabled: true
+        markdownlint:
+            enabled: true
+        github-checks:
+            enabled: true
+            timeout_ms: 120000
+        languagetool:
+            enabled: true
+            enabled_rules: []
+            disabled_rules: []
+            enabled_categories: []
+            disabled_categories: []
+            enabled_only: false
+            level: default
+        yamllint:
+            enabled: true
+        gitleaks:
+            enabled: true
+        actionlint:
+            enabled: true
+        semgrep:
+            enabled: true
+        clippy:
+            enabled: true
+        osvScanner:
+            enabled: true
+chat:
+    art: false
+    auto_reply: true
+knowledge_base:
+    opt_out: false
+    web_search:
+        enabled: true
+    code_guidelines:
+        enabled: true
+        filePatterns: []
+    learnings:
+        scope: auto
+    issues:
+        scope: local
+    pull_requests:
+        scope: local
+    mcp:
+        usage: enabled
+        disabled_servers: []
+code_generation:
+    docstrings:
+        language: en-US
+        path_instructions:
+            - path: "src/api/**/*.rs"
+              instructions: "Document API types with the corresponding OpenAPI schema field names and formats. Include examples of JSON serialization. Note camelCase rename behavior."
+            - path: "src/hashcat/**/*.rs"
+              instructions: "Document hashcat version compatibility (v6 vs v7). Include examples of parsed output lines. Note colon-aware parsing requirements for complex hash types."
+            - path: "src/agent/**/*.rs"
+              instructions: "Document async lifecycle and cancellation semantics. Note which operations use cancellable vs non-cancellable contexts."
+            - path: "src/task/**/*.rs"
+              instructions: "Document streaming I/O guarantees and atomic write patterns. Note file size expectations (100GB+)."
+    unit_tests:
+        path_instructions:
+            - path: "src/api/**/*.rs"
+              instructions: "Test with wiremock. Cover all HTTP status codes. Test serde round-trip for all request/response types. Verify camelCase serialization."
+            - path: "src/hashcat/**/*.rs"
+              instructions: "Test output parsing with v6 and v7 format samples. Include colon-containing hash types (MD5:salt, PBKDF2, Kerberos). Test exit code normalization for unsigned values."
+            - path: "src/task/**/*.rs"
+              instructions: "Test streaming downloads with mock HTTP. Test atomic file rename. Test checksum verification. Use tempfile for filesystem tests."
+            - path: "src/config/**/*.rs"
+              instructions: "Test config precedence: CLI overrides env overrides file overrides defaults. Test humantime duration parsing. Test validation of required fields."
+            - path: "src/benchmark/**/*.rs"
+              instructions: "Test cache read/write with tempfile. Test atomic rename. Test cache invalidation on version change."
+issue_enrichment:
+    auto_enrich:
+        enabled: true
+    planning:
+        enabled: false
+    labeling:
+        labeling_instructions:
+            - label: "bug"
+              instructions: "Apply when the issue reports incorrect behavior, crashes, data loss, or protocol violations"
+            - label: "enhancement"
+              instructions: "Apply when the issue requests new functionality, API coverage, or performance improvements"
+            - label: "documentation"
+              instructions: "Apply when the issue is about README, AGENTS.md, GOTCHAS.md, or other documentation"
+            - label: "area:hashcat"
+              instructions: "Apply when the issue involves hashcat integration, output parsing, session management, or command construction"
+            - label: "area:api"
+              instructions: "Apply when the issue involves the API client, server communication, or retry logic"
+        auto_apply_labels: true
