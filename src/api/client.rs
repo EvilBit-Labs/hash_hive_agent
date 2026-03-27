@@ -351,32 +351,35 @@ mod tests {
         assert!(is_retryable(&err));
     }
 
-    #[test]
-    fn timeout_request_error_is_retryable() {
-        // Build a reqwest timeout error via an expired client timeout.
+    #[tokio::test]
+    async fn timeout_request_error_is_retryable() {
+        // Use a wiremock server with a delayed response to deterministically trigger a timeout.
+        let server = wiremock::MockServer::start().await;
+
+        wiremock::Mock::given(wiremock::matchers::any())
+            .respond_with(
+                wiremock::ResponseTemplate::new(200)
+                    .set_body_string("ok")
+                    .set_delay(std::time::Duration::from_secs(5)),
+            )
+            .mount(&server)
+            .await;
+
         let client = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_nanos(1))
+            .timeout(std::time::Duration::from_millis(10))
             .build()
             .expect("client build");
 
-        let rt = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .expect("runtime");
+        let result = client.get(server.uri()).send().await;
 
-        let result = rt.block_on(async {
-            // Request to a non-routable address to trigger timeout.
-            client.get("http://192.0.2.1/").send().await
-        });
+        let req_err = result.expect_err("should timeout");
+        assert!(
+            req_err.is_timeout(),
+            "expected timeout error, got: {req_err}"
+        );
 
-        if let Err(req_err) = result {
-            if req_err.is_timeout() || req_err.is_connect() {
-                let err = ApiError::Request(req_err);
-                assert!(is_retryable(&err));
-            }
-            // If neither timeout nor connect, the error type doesn't match our test intent;
-            // skip rather than assert on an unrelated variant.
-        }
+        let err = ApiError::Request(req_err);
+        assert!(is_retryable(&err));
     }
 
     #[test]
