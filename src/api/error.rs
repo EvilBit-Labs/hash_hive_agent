@@ -1,7 +1,8 @@
 use reqwest::StatusCode;
 
-/// Errors returned by the HashHive API client.
+/// Errors returned by the `HashHive` API client.
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum ApiError {
     #[error("authentication failed: {message}")]
     Auth { message: String },
@@ -20,4 +21,7 @@ pub enum ApiError {
 
     #[error("unexpected status {status}: {body}")]
     Unexpected { status: StatusCode, body: String },
+
+    #[error("invalid URL: {0}")]
+    UrlParse(#[from] url::ParseError),
 }

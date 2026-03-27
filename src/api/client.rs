@@ -57,11 +57,12 @@ fn is_retryable(err: &ApiError) -> bool {
         ApiError::Auth { .. }
         | ApiError::NotFound { .. }
         | ApiError::Parse(_)
-        | ApiError::Unexpected { .. } => false,
+        | ApiError::Unexpected { .. }
+        | ApiError::UrlParse(_) => false,
     }
 }
 
-/// HTTP client for the HashHive Agent API.
+/// HTTP client for the `HashHive` Agent API.
 ///
 /// All methods return typed responses or [`ApiError`].
 /// The client is cheaply cloneable (wraps `Arc` internally via `reqwest::Client`).
@@ -78,18 +79,21 @@ impl ApiClient {
     ///
     /// `base_url` should include the `/api/v1/agent` prefix,
     /// e.g. `http://localhost:3001/api/v1/agent`.
-    pub fn new(base_url: Url, retry_config: RetryConfig) -> Self {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP client fails to initialize.
+    pub fn new(base_url: Url, retry_config: RetryConfig) -> Result<Self, ApiError> {
         let http = Client::builder()
             .user_agent(format!("hash_hive_agent/{}", env!("CARGO_PKG_VERSION")))
-            .build()
-            .expect("failed to build HTTP client");
+            .build()?;
 
-        Self {
+        Ok(Self {
             http,
             base_url,
             session_token: None,
             retry_config,
-        }
+        })
     }
 
     /// Store the session token obtained from [`create_session`](Self::create_session).
@@ -102,16 +106,14 @@ impl ApiClient {
         &self,
         agent_token: &str,
     ) -> Result<CreateSessionResponse, ApiError> {
-        self.with_retry(|| {
-            let url = self.url("sessions");
+        self.with_retry(|| async {
+            let url = self.url("sessions")?;
             let body = CreateSessionRequest {
                 token: agent_token.to_owned(),
             };
             debug!(%url, "creating agent session");
-            async move {
-                let resp = self.http.post(url).json(&body).send().await?;
-                self.handle_response(resp).await
-            }
+            let resp = self.http.post(url).json(&body).send().await?;
+            self.handle_response(resp).await
         })
         .await
     }
@@ -121,24 +123,20 @@ impl ApiClient {
         &self,
         heartbeat: &HeartbeatRequest,
     ) -> Result<AcknowledgedResponse, ApiError> {
-        self.with_retry(|| {
-            let url = self.url("heartbeat");
-            async move {
-                let resp = self.authed_post(&url).json(heartbeat).send().await?;
-                self.handle_response(resp).await
-            }
+        self.with_retry(|| async {
+            let url = self.url("heartbeat")?;
+            let resp = self.authed_post(&url).json(heartbeat).send().await?;
+            self.handle_response(resp).await
         })
         .await
     }
 
     /// Poll for the next available task.
     pub async fn get_next_task(&self) -> Result<NextTaskResponse, ApiError> {
-        self.with_retry(|| {
-            let url = self.url("tasks/next");
-            async move {
-                let resp = self.authed_post(&url).send().await?;
-                self.handle_response(resp).await
-            }
+        self.with_retry(|| async {
+            let url = self.url("tasks/next")?;
+            let resp = self.authed_post(&url).send().await?;
+            self.handle_response(resp).await
         })
         .await
     }
@@ -149,12 +147,10 @@ impl ApiClient {
         task_id: i64,
         report: &TaskReport,
     ) -> Result<AcknowledgedResponse, ApiError> {
-        self.with_retry(|| {
-            let url = self.url(&format!("tasks/{task_id}/report"));
-            async move {
-                let resp = self.authed_post(&url).json(report).send().await?;
-                self.handle_response(resp).await
-            }
+        self.with_retry(|| async {
+            let url = self.url(&format!("tasks/{task_id}/report"))?;
+            let resp = self.authed_post(&url).json(report).send().await?;
+            self.handle_response(resp).await
         })
         .await
     }
@@ -166,8 +162,8 @@ impl ApiClient {
         since: Option<&str>,
         limit: Option<i32>,
     ) -> Result<ZapResponse, ApiError> {
-        self.with_retry(|| {
-            let mut url = self.url(&format!("tasks/{task_id}/zaps"));
+        self.with_retry(|| async {
+            let mut url = self.url(&format!("tasks/{task_id}/zaps"))?;
             {
                 let mut query = url.query_pairs_mut();
                 if let Some(s) = since {
@@ -177,10 +173,8 @@ impl ApiClient {
                     query.append_pair("limit", &l.to_string());
                 }
             }
-            async move {
-                let resp = self.authed_get(&url).send().await?;
-                self.handle_response(resp).await
-            }
+            let resp = self.authed_get(&url).send().await?;
+            self.handle_response(resp).await
         })
         .await
     }
@@ -190,12 +184,10 @@ impl ApiClient {
         &self,
         submission: &BenchmarkSubmission,
     ) -> Result<AcknowledgedResponse, ApiError> {
-        self.with_retry(|| {
-            let url = self.url("benchmark");
-            async move {
-                let resp = self.authed_post(&url).json(submission).send().await?;
-                self.handle_response(resp).await
-            }
+        self.with_retry(|| async {
+            let url = self.url("benchmark")?;
+            let resp = self.authed_post(&url).json(submission).send().await?;
+            self.handle_response(resp).await
         })
         .await
     }
@@ -205,12 +197,10 @@ impl ApiClient {
         &self,
         error: &AgentErrorReport,
     ) -> Result<AcknowledgedResponse, ApiError> {
-        self.with_retry(|| {
-            let url = self.url("errors");
-            async move {
-                let resp = self.authed_post(&url).json(error).send().await?;
-                self.handle_response(resp).await
-            }
+        self.with_retry(|| async {
+            let url = self.url("errors")?;
+            let resp = self.authed_post(&url).json(error).send().await?;
+            self.handle_response(resp).await
         })
         .await
     }
@@ -257,13 +247,13 @@ impl ApiClient {
     // Helpers
     // -----------------------------------------------------------------------
 
-    fn url(&self, path: &str) -> Url {
+    fn url(&self, path: &str) -> Result<Url, ApiError> {
         let mut url = self.base_url.clone();
         // Ensure trailing slash before joining
         if !url.path().ends_with('/') {
             url.set_path(&format!("{}/", url.path()));
         }
-        url.join(path).expect("invalid URL path segment")
+        Ok(url.join(path)?)
     }
 
     fn authed_post(&self, url: &Url) -> reqwest::RequestBuilder {
@@ -317,12 +307,11 @@ impl ApiClient {
 
     async fn extract_error_message(&self, resp: reqwest::Response) -> String {
         let body = resp.text().await.unwrap_or_default();
-        match serde_json::from_str::<ErrorResponse>(&body) {
-            Ok(err_resp) => err_resp.error.and_then(|e| e.message).unwrap_or(body),
-            Err(_) => {
-                warn!("could not parse error response body");
-                body
-            }
+        if let Ok(err_resp) = serde_json::from_str::<ErrorResponse>(&body) {
+            err_resp.error.and_then(|e| e.message).unwrap_or(body)
+        } else {
+            warn!("could not parse error response body");
+            body
         }
     }
 }
