@@ -19,7 +19,8 @@ use shutdown::listen_for_shutdown;
 pub async fn run(config: AgentConfig) -> Result<()> {
     let base_url: Url = config.server_url.parse().context("invalid server URL")?;
 
-    let mut client = ApiClient::new(base_url);
+    let retry_config = crate::api::RetryConfig::from(&config);
+    let mut client = ApiClient::new(base_url, retry_config);
 
     // Authenticate
     info!("authenticating with server");
