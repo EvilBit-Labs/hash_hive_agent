@@ -125,3 +125,23 @@ async fn exhausted_retries_propagate_server_error() {
         other => panic!("expected Server error, got: {other:?}"),
     }
 }
+
+#[tokio::test]
+async fn zero_retries_sends_exactly_one_request() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .and(path("/api/v1/agent/sessions"))
+        .respond_with(ResponseTemplate::new(500).set_body_json(serde_json::json!({
+            "error": { "message": "internal server error" }
+        })))
+        .expect(1) // Exactly one attempt, no retries.
+        .mount(&server)
+        .await;
+
+    let client = test_client(&server, 0);
+    let resp = client.create_session("test-token").await;
+
+    assert!(resp.is_err());
+    assert!(matches!(resp.unwrap_err(), ApiError::Server { .. }));
+}
