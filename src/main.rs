@@ -99,22 +99,39 @@ fn resolve_log_level(cli: &Cli) -> String {
 }
 
 /// Classify an anyhow error chain into an exit code.
+///
+/// Uses error downcasting for type-safe classification rather than string matching.
 fn classify_exit_code(err: &anyhow::Error) -> i32 {
-    let msg = err.to_string();
-    if msg.contains("agent token is required") || msg.contains("failed to load configuration") {
-        EXIT_CONFIG
-    } else if msg.contains("failed to authenticate") || msg.contains("authentication failed") {
-        EXIT_AUTH
-    } else {
-        EXIT_RUNTIME
+    // Check the error chain for known typed errors.
+    for cause in err.chain() {
+        if let Some(api_err) = cause.downcast_ref::<hash_hive_agent::api::ApiError>() {
+            if matches!(api_err, hash_hive_agent::api::ApiError::Auth { .. }) {
+                return EXIT_AUTH;
+            }
+        }
+        if cause.downcast_ref::<config::Error>().is_some() {
+            return EXIT_CONFIG;
+        }
     }
+
+    // Fallback: check context messages for config-related errors that don't
+    // have a typed error (e.g., missing token, bad URL).
+    let msg = format!("{err:#}");
+    if msg.contains("agent token is required") || msg.contains("failed to load configuration") {
+        return EXIT_CONFIG;
+    }
+
+    EXIT_RUNTIME
 }
 
 fn init_logging(level: &str, json: bool) -> anyhow::Result<()> {
     use anyhow::Context;
 
     let filter = EnvFilter::try_new(level)
-        .or_else(|_| EnvFilter::try_new("info"))
+        .or_else(|e| {
+            eprintln!("warning: invalid log level '{level}': {e}, falling back to 'info'");
+            EnvFilter::try_new("info")
+        })
         .context("failed to create log filter")?;
 
     let use_ansi =
