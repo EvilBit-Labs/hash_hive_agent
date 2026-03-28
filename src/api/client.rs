@@ -232,7 +232,13 @@ impl ApiClient {
             .when(is_retryable)
             .notify(|err, dur| {
                 let n = attempt.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                warn!(error = %err, attempt = n, delay = ?dur, "retrying API request");
+                warn!(
+                    error = %err,
+                    attempt = n,
+                    max_retries = self.retry_config.max_retries,
+                    delay = ?dur,
+                    "retrying API request"
+                );
             })
             .await
     }

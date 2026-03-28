@@ -2,6 +2,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
 use futures::StreamExt;
+use indicatif::{ProgressBar, ProgressStyle};
 use sha2::{Digest, Sha256};
 use tokio::fs;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -42,6 +43,26 @@ pub async fn download_file(
         bail!("download failed with status {}", resp.status());
     }
 
+    let total_size = resp.content_length().unwrap_or(0);
+    let progress = if total_size > 0 {
+        let pb = ProgressBar::new(total_size);
+        pb.set_style(
+            ProgressStyle::default_bar()
+                .template("{spinner:.green} [{bar:40.cyan/blue}] {bytes}/{total_bytes} ({bytes_per_sec}, {eta})")
+                .unwrap_or_else(|_| ProgressStyle::default_bar())
+                .progress_chars("#>-"),
+        );
+        pb
+    } else {
+        let pb = ProgressBar::new_spinner();
+        pb.set_style(
+            ProgressStyle::default_spinner()
+                .template("{spinner:.green} {bytes} downloaded ({bytes_per_sec})")
+                .unwrap_or_else(|_| ProgressStyle::default_spinner()),
+        );
+        pb
+    };
+
     let mut file = fs::File::create(&temp_path)
         .await
         .context("failed to create temp file")?;
@@ -55,7 +76,10 @@ pub async fn download_file(
             .await
             .context("error writing to temp file")?;
         bytes_written += data.len() as u64;
+        progress.set_position(bytes_written);
     }
+
+    progress.finish_and_clear();
 
     file.flush().await.context("failed to flush temp file")?;
     drop(file);

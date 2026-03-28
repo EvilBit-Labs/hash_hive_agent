@@ -88,9 +88,10 @@ pub async fn run(config: AgentConfig) -> Result<()> {
     }
 
     // Graceful shutdown
+    info!("sending final heartbeat");
     send_shutdown_heartbeat(&client).await;
     hb_handle.abort();
 
-    info!("agent stopped");
+    info!("agent stopped cleanly");
     Ok(())
 }

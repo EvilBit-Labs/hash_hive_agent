@@ -7,10 +7,12 @@ use anyhow::{Context, Result};
 use serde::Deserialize;
 
 use defaults::{
-    DEFAULT_BACKOFF_BASE, DEFAULT_BACKOFF_MAX, DEFAULT_CACHE_DIR, DEFAULT_DATA_DIR,
-    DEFAULT_DOWNLOAD_TIMEOUT, DEFAULT_HEARTBEAT_INTERVAL, DEFAULT_MAX_RETRIES,
-    DEFAULT_POLL_INTERVAL, DEFAULT_REQUEST_TIMEOUT, DEFAULT_SERVER_URL,
+    DEFAULT_BACKOFF_BASE, DEFAULT_BACKOFF_MAX, DEFAULT_DOWNLOAD_TIMEOUT,
+    DEFAULT_HEARTBEAT_INTERVAL, DEFAULT_MAX_RETRIES, DEFAULT_POLL_INTERVAL,
+    DEFAULT_REQUEST_TIMEOUT, DEFAULT_SERVER_URL,
 };
+#[cfg(not(target_os = "windows"))]
+use defaults::{DEFAULT_CACHE_DIR, DEFAULT_DATA_DIR};
 
 /// Agent configuration resolved from CLI flags, environment variables, and config file.
 #[derive(Debug, Clone, Deserialize)]
@@ -76,8 +78,8 @@ impl AgentConfig {
             .set_default("backoff_max", "60s")?
             .set_default("request_timeout", "30s")?
             .set_default("download_timeout", "600s")?
-            .set_default("data_dir", DEFAULT_DATA_DIR)?
-            .set_default("cache_dir", DEFAULT_CACHE_DIR)?;
+            .set_default("data_dir", default_data_dir().to_string_lossy().as_ref())?
+            .set_default("cache_dir", default_cache_dir().to_string_lossy().as_ref())?;
 
         if let Some(p) = path {
             builder = builder.add_source(config::File::with_name(p).required(false));
@@ -122,10 +124,24 @@ const fn default_download_timeout() -> Duration {
     DEFAULT_DOWNLOAD_TIMEOUT
 }
 fn default_data_dir() -> PathBuf {
-    PathBuf::from(DEFAULT_DATA_DIR)
+    #[cfg(not(target_os = "windows"))]
+    {
+        PathBuf::from(DEFAULT_DATA_DIR)
+    }
+    #[cfg(target_os = "windows")]
+    {
+        PathBuf::from(defaults::windows_program_data_subdir("data"))
+    }
 }
 fn default_cache_dir() -> PathBuf {
-    PathBuf::from(DEFAULT_CACHE_DIR)
+    #[cfg(not(target_os = "windows"))]
+    {
+        PathBuf::from(DEFAULT_CACHE_DIR)
+    }
+    #[cfg(target_os = "windows")]
+    {
+        PathBuf::from(defaults::windows_program_data_subdir("cache"))
+    }
 }
 
 /// Serde helper module for human-readable durations via the `humantime` crate format.

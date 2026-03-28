@@ -175,6 +175,9 @@ config = "0.15.22"
 # Async streaming for large file downloads
 futures = "0.3.32"
 
+# Progress bars for long-running operations
+indicatif = "0.17.11"
+
 # Regex for hashcat output parsing
 regex = "1.12.3"
 
