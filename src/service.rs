@@ -77,7 +77,17 @@ fn uninstall() -> Result<()> {
     let mgr = manager()?;
 
     // Stop first if running — ignore errors (may already be stopped).
-    drop(mgr.stop(ServiceStopCtx { label: label()? }));
+    // Stop the service before uninstalling. Ignore "not running" errors,
+    // but warn about unexpected failures.
+    if let Err(e) = mgr.stop(ServiceStopCtx { label: label()? }) {
+        let msg = e.to_string().to_lowercase();
+        if !msg.contains("not running")
+            && !msg.contains("not active")
+            && !msg.contains("not started")
+        {
+            eprintln!("warning: failed to stop service before uninstall: {e}");
+        }
+    }
 
     mgr.uninstall(ServiceUninstallCtx { label: label()? })
         .context("failed to uninstall service")?;

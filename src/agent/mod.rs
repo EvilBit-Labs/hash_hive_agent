@@ -70,7 +70,7 @@ pub async fn run(config: AgentConfig) -> Result<()> {
                     error!(error = %e, task_id, "task execution failed");
                     let report = AgentErrorReport {
                         severity: ErrorSeverity::Error,
-                        message: e.to_string(),
+                        message: format!("{e:#}"),
                         context: None,
                         task_id: Some(task_id),
                     };

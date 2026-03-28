@@ -104,12 +104,12 @@ fn resolve_log_level(cli: &Cli) -> String {
 fn classify_exit_code(err: &anyhow::Error) -> i32 {
     // Check the error chain for known typed errors.
     for cause in err.chain() {
-        if let Some(api_err) = cause.downcast_ref::<hash_hive_agent::api::ApiError>() {
-            if matches!(api_err, hash_hive_agent::api::ApiError::Auth { .. }) {
-                return EXIT_AUTH;
-            }
+        if let Some(api_err) = cause.downcast_ref::<hash_hive_agent::api::ApiError>()
+            && matches!(api_err, hash_hive_agent::api::ApiError::Auth { .. })
+        {
+            return EXIT_AUTH;
         }
-        if cause.downcast_ref::<config::Error>().is_some() {
+        if cause.downcast_ref::<config::ConfigError>().is_some() {
             return EXIT_CONFIG;
         }
     }
