@@ -37,19 +37,18 @@ fn install() -> Result<()> {
     let program = std::env::current_exe().context("failed to determine current executable path")?;
 
     // Pass through environment-based config so the service inherits it.
-    let mut env_vars: Vec<(String, String)> = Vec::new();
-    for key in [
+    let env_keys = [
         "HASH_HIVE_SERVER_URL",
         "HASH_HIVE_AGENT_TOKEN",
         "HASH_HIVE_CONFIG",
         "HASH_HIVE_HASHCAT_PATH",
         "HASH_HIVE_LOG_LEVEL",
         "HASH_HIVE_JSON_LOGS",
-    ] {
-        if let Ok(val) = std::env::var(key) {
-            env_vars.push((key.to_owned(), val));
-        }
-    }
+    ];
+    let env_vars: Vec<(String, String)> = env_keys
+        .iter()
+        .filter_map(|key| std::env::var(key).ok().map(|val| ((*key).to_owned(), val)))
+        .collect();
 
     let ctx = ServiceInstallCtx {
         label: label()?,
@@ -58,11 +57,7 @@ fn install() -> Result<()> {
         contents: None,
         username: None,
         working_directory: None,
-        environment: if env_vars.is_empty() {
-            None
-        } else {
-            Some(env_vars)
-        },
+        environment: (!env_vars.is_empty()).then_some(env_vars),
         autostart: true,
         restart_policy: service_manager::RestartPolicy::OnFailure {
             delay_secs: Some(5),
@@ -119,18 +114,11 @@ fn status() -> Result<()> {
         .context("failed to query service status")?;
 
     match status {
-        service_manager::ServiceStatus::NotInstalled => {
-            println!("Service not installed");
-        }
-        service_manager::ServiceStatus::Running => {
-            println!("Service running");
-        }
-        service_manager::ServiceStatus::Stopped(reason) => {
-            if let Some(r) = reason {
-                println!("Service stopped: {r}");
-            } else {
-                println!("Service stopped");
-            }
+        service_manager::ServiceStatus::NotInstalled => println!("Service not installed"),
+        service_manager::ServiceStatus::Running => println!("Service running"),
+        service_manager::ServiceStatus::Stopped(None) => println!("Service stopped"),
+        service_manager::ServiceStatus::Stopped(Some(reason)) => {
+            println!("Service stopped: {reason}");
         }
     }
 
