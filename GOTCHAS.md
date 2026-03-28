@@ -1,6 +1,6 @@
 # Gotchas
 
-Known pitfalls and edge cases. Referenced from AGENTS.md.
+Known pitfalls and edge cases. If you hit a non-obvious problem, add it here.
 
 ## Hashcat Output Routing
 

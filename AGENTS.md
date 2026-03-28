@@ -1,125 +1,20 @@
-# AGENTS
+# Agent Context
 
-Standards and architecture for the hash_hive_agent project.
+This file provides AI coding assistants with project context. All substantive documentation lives in the files linked below.
 
 @GOTCHAS.md
 
-## Architecture
+## Project Documentation
 
-### Core Concepts
+- **Architecture & Design**: [ARCHITECTURE.md](./ARCHITECTURE.md) — system overview, module boundaries, data flow, retry/backoff design, concurrency patterns
+- **Contributing Standards**: [CONTRIBUTING.md](./CONTRIBUTING.md) — code style, lint policy, error handling, commit format, PR process
+- **Known Gotchas**: [GOTCHAS.md](./GOTCHAS.md) — hashcat output routing, clippy edge cases, dependency constraints, cross-platform issues
+- **Development Setup**: [docs/development.md](./docs/development.md) — mise toolchain, just commands, CI, pre-commit hooks
+- **Testing**: [docs/testing.md](./docs/testing.md) — test organization, libraries, coverage requirements
 
-- **Purpose:** A distributed Rust agent for HashHive, managing hash-cracking tasks via hashcat across Linux, macOS, and Windows.
-- **Entrypoint:** `main.rs` initializes tracing, parses CLI via clap, loads config, and enters the agent run loop.
-- **Configuration:** Environment variables (`HASH_HIVE_*`), CLI flags (clap derive), and optional YAML/TOML config file.
+## Agent-Specific Notes
 
-### Task Lifecycle & API Contract
-
-The agent is a long-lived CLI client interacting with the HashHive server API:
-
-1. **Authentication:** Create session with pre-shared token via `POST /sessions`.
-2. **Heartbeat:** Send periodic status via `POST /heartbeat`.
-3. **Polling for Tasks:** Request new tasks from `POST /tasks/next`.
-4. **Task Execution:** Download resources (streaming, no full-file buffering), launch hashcat, report progress via `POST /tasks/{id}/report`.
-5. **Benchmarks:** Submit hashcat benchmark results via `POST /benchmark`.
-6. **Error Reporting:** Report agent errors via `POST /errors`.
-7. **Zap Lists:** Fetch already-cracked hashes via `GET /tasks/{id}/zaps` to skip during processing.
-
-- All API interactions use the Agent API v1 contract (see `../hash_hive/packages/openapi/agent-api.yaml`).
-- All API requests use exponential backoff with jitter for transient failures (see Retry / Backoff).
-
-## Rust
-
-The project follows idiomatic Rust 2024 edition practices.
-
-### Project Structure
-
-- `src/main.rs` — Binary entrypoint (clap CLI, tracing init, agent run loop).
-- `src/lib.rs` — Library root, re-exports all modules.
-- `src/cli.rs` — Clap derive CLI definition.
-- `src/config/` — Configuration loading (env, file, CLI overrides) with typed defaults.
-- `src/api/` — HTTP client layer: typed request/response structs, reqwest-based client, error types.
-- `src/agent/` — Agent lifecycle: heartbeat loop, task polling, graceful shutdown.
-- `src/hashcat/` — Hashcat integration: session management, output parsing, exit code classification.
-- `src/task/` — Task lifecycle: resource downloads (streaming), hashcat execution, progress reporting.
-- `src/benchmark/` — Benchmark execution and disk caching.
-- `src/platform/` — Cross-platform abstractions (Linux, macOS, Windows).
-
-### Lint Configuration
-
-- `unsafe_code` is **forbidden** globally.
-- `unwrap_used` and `panic` are **denied** — use `?`, `anyhow`, or `thiserror` instead.
-- Full pedantic clippy configuration in `Cargo.toml` `[workspace.lints.clippy]`.
-- Zero warnings policy: `warnings = "deny"`.
-
-### Error Handling
-
-- Library errors: `thiserror` with structured error enums (see `src/api/error.rs`).
-- Application errors: `anyhow` with `.context()` for actionable messages.
-- Never `unwrap()` or `expect()` in production code paths.
-- Use `?` propagation everywhere.
-
-### Retry / Backoff
-
-- `backon` crate provides exponential backoff with jitter via `ExponentialBuilder` + `Retryable`.
-- `RetryConfig` in `src/api/client.rs` maps `AgentConfig` backoff fields to `backon` builder params.
-- Only `ApiError::Server` (5xx) and transient `ApiError::Request` (timeout/connect) are retryable; `Auth`, `NotFound`, `Parse`, `Unexpected`, and `UrlParse` fail immediately.
-- `ApiClient::new(base_url, retry_config)` returns `Result<Self, ApiError>` — callers provide `RetryConfig` explicitly.
-- Never add default/optional constructor paths that bypass `AgentConfig` — all runtime config must flow through explicitly.
-- All public `ApiClient` methods use `with_retry` internally — retries are transparent to callers.
-
-### Concurrency
-
-- `tokio` async runtime for all I/O, subprocess management, and timers.
-- `CancellationToken` (from `tokio-util`) for cooperative shutdown.
-- `tokio::select!` for multiplexing cancellation with work.
-- No `time::sleep` — always use `select!` with cancellation.
-
-### Performance
-
-- `regex::Regex` compiled at package level via `LazyLock`, never inside functions.
-- Streaming file downloads — never buffer 100GB+ files in memory.
-- Atomic file writes (temp + rename) for crash safety.
-
-### Formatting & Linting
-
-- **Formatting:** `cargo fmt` (rustfmt 2024 edition).
-- **Linting:** `cargo clippy` with workspace lint config.
-- **Dev commands:** `just lint-rust`, `just test`, `just ci-check`.
-
-### Testing
-
-- Unit tests in `#[cfg(test)]` modules within the same file.
-- Integration tests in `tests/`.
-- Use `wiremock` for HTTP mocking, `tempfile` for filesystem tests.
-- `insta` for snapshot testing.
-- Run with: `just test` (uses `cargo nextest`).
-
-### Tooling
-
-- **Dev tools:** `mise` manages all toolchains via `mise.toml`.
-- **Task runner:** `just` (see `justfile`).
-- **CI:** GitHub Actions (`.github/workflows/`): quality, test, cross-platform test, coverage.
-- **Security:** `cargo audit`, `cargo deny` for supply chain security.
-- **Coverage:** `cargo llvm-cov` with 80% minimum threshold.
-
-## Git
-
-### Commit Messages
-
-Conventional Commits: `<type>(<scope>): <description>`. Types: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`.
-
-### Changelog
-
-`CHANGELOG.md` is auto-generated from commit messages using `git-cliff` (`just changelog`).
-
-### EvilBit-Labs Conventions
-
-This project follows the shared conventions from libmagic-rs, mmap-guard, stringy, token-privilege, and daemoneye:
-
-- `unsafe_code = "forbid"` and `unwrap_used = "deny"` in `[workspace.lints]`.
-- `cargo-sort` enforces dependency ordering in Cargo.toml.
-- `cargo-deny` bans `openssl` and `git2` — use `rustls` and `gix` instead.
-- `mise.toml` manages all dev tooling — never install tools manually.
-- `justfile` provides all dev commands — `just ci-check` for full local CI parity.
-- `release-plz.toml` + `cargo-dist` for releases — `git-cliff` for changelog.
-- Pre-commit hooks run `rustfmt`, `clippy`, `cargo-check`, `cargo-machete`, `mdformat`, `cargo-audit`, `cargo-sort`, and `actionlint`.
+- The project uses Rust 2024 edition with strict linting. Read `Cargo.toml` `[workspace.lints]` before suggesting code.
+- All runtime config flows through `AgentConfig` explicitly — never introduce default/optional constructors that bypass it.
+- All API requests retry transparently via `with_retry` in `ApiClient` — callers should not add their own retry logic.
+- Prefer `select!` with `CancellationToken` over bare `time::sleep` for any async wait.
