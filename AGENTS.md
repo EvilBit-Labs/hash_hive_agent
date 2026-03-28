@@ -18,3 +18,7 @@ This file provides AI coding assistants with project context. All substantive do
 - All runtime config flows through `AgentConfig` explicitly — never introduce default/optional constructors that bypass it.
 - All API requests retry transparently via `with_retry` in `ApiClient` — callers should not add their own retry logic.
 - Prefer `select!` with `CancellationToken` over bare `time::sleep` for long waits. Short backoff delays in `backon` are an accepted exception.
+
+## Agent Rules <!-- tessl-managed -->
+
+@.tessl/RULES.md follow the [instructions](.tessl/RULES.md)
