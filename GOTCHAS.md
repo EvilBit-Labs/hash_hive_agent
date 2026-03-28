@@ -31,7 +31,7 @@ Known pitfalls and edge cases. If you hit a non-obvious problem, add it here.
 ## Cross-Platform
 
 - Hashcat session file location varies by OS: `~/.local/share/hashcat/sessions/` (Linux), `~/.hashcat/sessions/` (legacy), or next to the binary (Windows).
-- `os.Symlink` equivalents require elevated privileges on Windows -- test helpers should skip symlink tests on Windows.
+- Symlinks require elevated privileges on Windows -- test helpers should skip symlink tests on Windows.
 
 ## Pre-commit Hooks
 
@@ -48,7 +48,7 @@ Known pitfalls and edge cases. If you hit a non-obvious problem, add it here.
 
 ## Retry Classification Testing
 
-- `reqwest::Error` has no public constructors -- test `is_retryable` with real network calls (e.g., `192.0.2.1` for timeout/connect errors) inside a `tokio::runtime::Builder::new_current_thread()` block.
+- `reqwest::Error` has no public constructors -- test `is_retryable` by producing real errors. Timeouts use a `wiremock::MockServer` with a delayed response and a short client timeout. Connect errors use `192.0.2.1:1` (RFC 5737 TEST-NET-1, guaranteed unroutable) with a short `connect_timeout`. Non-transient request errors use an invalid URL scheme (e.g., `ht!tp://invalid`).
 - Only `is_timeout()` and `is_connect()` are retryable for `ApiError::Request`; `is_request()` includes permanent builder/decode errors.
 
 ## Exit Codes

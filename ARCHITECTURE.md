@@ -52,7 +52,7 @@ All API interactions use the Agent API v1 contract (see `../hash_hive/packages/o
 - `tokio` async runtime for all I/O, subprocess management, and timers.
 - `CancellationToken` (from `tokio-util`) for cooperative shutdown.
 - `tokio::select!` for multiplexing cancellation with work.
-- No `time::sleep` — always use `select!` with cancellation.
+- Prefer `select!` with `CancellationToken` over bare `time::sleep` for long waits. Short backoff delays in the retry layer (`backon`) are an accepted exception.
 
 ## Performance Constraints
 

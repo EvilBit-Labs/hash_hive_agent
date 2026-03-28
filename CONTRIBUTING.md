@@ -4,7 +4,7 @@ Thank you for your interest in contributing to hash_hive_agent.
 
 ## Before You Start
 
-- **[ARCHITECTURE.md](./ARCHITECTURE.md)** — system design, module boundaries, data flow
+- **[ARCHITECTURE.md](./ARCHITECTURE.md)** — system design, module boundaries, task lifecycle
 - **[GOTCHAS.md](./GOTCHAS.md)** — known pitfalls and hard-won lessons
 - **[docs/development.md](./docs/development.md)** — local setup, toolchain, dev commands
 - **[docs/testing.md](./docs/testing.md)** — test strategy, coverage requirements
