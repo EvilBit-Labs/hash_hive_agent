@@ -83,3 +83,7 @@ This project follows shared conventions across EvilBit-Labs repos (libmagic-rs, 
 ## License
 
 By contributing, you agree that your contributions will be licensed under the Apache-2.0 license.
+
+## AI Assistance
+
+We accept considerate AI-assisted contributions. Install `tessl install tessl-labs/good-oss-citizen` first.
