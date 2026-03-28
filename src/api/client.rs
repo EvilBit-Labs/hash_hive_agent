@@ -54,7 +54,8 @@ fn is_retryable(err: &ApiError) -> bool {
 /// HTTP client for the `HashHive` Agent API.
 ///
 /// All methods return typed responses or [`ApiError`].
-/// The client is cheaply cloneable (wraps `Arc` internally via `reqwest::Client`).
+/// The client is cloneable; the underlying HTTP connection pool is shared
+/// across clones via `reqwest::Client`.
 #[derive(Debug, Clone)]
 pub struct ApiClient {
     http: Client,
@@ -91,6 +92,10 @@ impl ApiClient {
     }
 
     /// Authenticate with the server using a pre-shared agent token.
+    ///
+    /// Retries on transient 5xx errors. This assumes the server handles
+    /// duplicate `POST /sessions` calls idempotently (e.g., returns the
+    /// existing session rather than creating a second one).
     pub async fn create_session(
         &self,
         agent_token: &str,
@@ -207,18 +212,18 @@ impl ApiClient {
         F: FnMut() -> Fut,
         Fut: Future<Output = Result<T, ApiError>>,
     {
+        // u32 fits in usize on all supported 64-bit platforms.
+        // Fallback is unreachable but satisfies the type system for hypothetical 16-bit targets.
+        let max_times = usize::try_from(self.retry_config.max_retries).unwrap_or(usize::MAX);
+
         let backoff = ExponentialBuilder::default()
             .with_min_delay(self.retry_config.backoff_base)
             .with_max_delay(self.retry_config.backoff_max)
-            .with_max_times(
-                self.retry_config
-                    .max_retries
-                    .try_into()
-                    .unwrap_or(usize::MAX),
-            )
+            .with_max_times(max_times)
             .with_jitter();
 
-        // 1-based retry attempt counter for structured logging.
+        // Counts how many attempts have failed so far (1-based).
+        // The notify callback fires after each failure, before the retry delay.
         let attempt = std::sync::atomic::AtomicU32::new(1);
 
         operation
@@ -238,7 +243,6 @@ impl ApiClient {
 
     fn url(&self, path: &str) -> Result<Url, ApiError> {
         let mut url = self.base_url.clone();
-        // Ensure trailing slash before joining
         if !url.path().ends_with('/') {
             url.set_path(&format!("{}/", url.path()));
         }
@@ -295,11 +299,18 @@ impl ApiClient {
     }
 
     async fn extract_error_message(&self, resp: reqwest::Response) -> String {
-        let body = resp.text().await.unwrap_or_default();
+        let status = resp.status();
+        let body = match resp.text().await {
+            Ok(text) => text,
+            Err(e) => {
+                warn!(error = %e, %status, "failed to read error response body");
+                return format!("(could not read response body: {e})");
+            }
+        };
         if let Ok(err_resp) = serde_json::from_str::<ErrorResponse>(&body) {
             err_resp.error.and_then(|e| e.message).unwrap_or(body)
         } else {
-            warn!("could not parse error response body");
+            warn!(%status, "could not parse error response body as JSON");
             body
         }
     }
@@ -408,5 +419,52 @@ mod tests {
         let parse_err = url::Url::parse("://invalid").unwrap_err();
         let err = ApiError::UrlParse(parse_err);
         assert!(!is_retryable(&err));
+    }
+
+    /// Verify that connection errors (server unreachable) are retryable.
+    ///
+    /// Uses `192.0.2.1` (RFC 5737 TEST-NET-1) which is guaranteed unroutable,
+    /// triggering a connect error deterministically.
+    #[tokio::test]
+    async fn connect_request_error_is_retryable() {
+        let client = reqwest::Client::builder()
+            .connect_timeout(std::time::Duration::from_millis(50))
+            .build()
+            .expect("client build");
+
+        let result = client.get("http://192.0.2.1:1/unreachable").send().await;
+
+        let req_err = result.expect_err("should fail to connect");
+        assert!(
+            req_err.is_connect(),
+            "expected connect error, got: {req_err}"
+        );
+
+        let err = ApiError::Request(req_err);
+        assert!(is_retryable(&err));
+    }
+
+    /// Verify that non-transient `Request` errors (e.g., invalid URL scheme) are NOT retryable.
+    ///
+    /// Guards against a regression where someone broadens `Request(_) => true`.
+    #[test]
+    fn non_transient_request_error_is_not_retryable() {
+        let client = reqwest::Client::new();
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("runtime");
+
+        let result = rt.block_on(async { client.get("ht!tp://invalid").send().await });
+
+        let req_err = result.expect_err("should fail with request error");
+        assert!(!req_err.is_timeout(), "should not be timeout");
+        assert!(!req_err.is_connect(), "should not be connect");
+
+        let err = ApiError::Request(req_err);
+        assert!(
+            !is_retryable(&err),
+            "non-transient request errors must not be retryable"
+        );
     }
 }
