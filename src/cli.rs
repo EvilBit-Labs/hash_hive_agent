@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use clap::Parser;
+use clap::{Parser, Subcommand};
 
 /// `HashHive` Agent — distributed hashcat agent for the `HashHive` platform.
 #[derive(Debug, Parser)]
@@ -50,4 +50,32 @@ pub struct Cli {
     /// Increase log verbosity (-v = debug, -vv = trace). Overrides --log-level.
     #[arg(short, long, action = clap::ArgAction::Count)]
     pub verbose: u8,
+
+    #[command(subcommand)]
+    pub command: Option<Command>,
+}
+
+/// Service management subcommands.
+#[derive(Debug, Subcommand)]
+#[non_exhaustive]
+pub enum Command {
+    /// Install the agent as a system service.
+    #[command(name = "service-install")]
+    ServiceInstall,
+
+    /// Uninstall the agent system service.
+    #[command(name = "service-uninstall")]
+    ServiceUninstall,
+
+    /// Start the installed service.
+    #[command(name = "service-start")]
+    ServiceStart,
+
+    /// Stop the installed service.
+    #[command(name = "service-stop")]
+    ServiceStop,
+
+    /// Show the service status.
+    #[command(name = "service-status")]
+    ServiceStatus,
 }

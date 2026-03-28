@@ -23,6 +23,15 @@ const EXIT_RUNTIME: i32 = 1;
 async fn main() {
     let cli = Cli::parse();
 
+    // Service management subcommands run without logging/config.
+    if let Some(ref cmd) = cli.command {
+        if let Err(e) = hash_hive_agent::service::handle(cmd) {
+            eprintln!("error: {e:#}");
+            std::process::exit(EXIT_RUNTIME);
+        }
+        return;
+    }
+
     let log_level = resolve_log_level(&cli);
     if let Err(e) = init_logging(&log_level, cli.json_logs) {
         eprintln!("failed to initialize logging: {e}");
@@ -37,7 +46,6 @@ async fn main() {
 
     if let Err(e) = run(cli).await {
         let code = classify_exit_code(&e);
-        // Use tracing for errors where logging is initialized
         tracing::error!(error = %e, exit_code = code, "agent exited with error");
         std::process::exit(code);
     }
