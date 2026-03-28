@@ -91,7 +91,10 @@ impl Session {
                     result = lines.next_line() => {
                         match result {
                             Ok(Some(line)) => {
-                                handle_stdout_line(&line, &stdout_tx).await;
+                                if !handle_stdout_line(&line, &stdout_tx).await {
+                                    debug!("event receiver dropped, stopping stdout reader");
+                                    break;
+                                }
                             }
                             Ok(None) => break,
                             Err(e) => {
@@ -117,8 +120,10 @@ impl Session {
                         match result {
                             Ok(Some(line)) => {
                                 if let Some(msg) = classify_line(&line) {
-                                    #[allow(clippy::let_underscore_must_use)]
-                                    let _ = stderr_tx.send(SessionEvent::Message(msg)).await;
+                                    if stderr_tx.send(SessionEvent::Message(msg)).await.is_err() {
+                                        debug!("event receiver dropped, stopping stderr reader");
+                                        break;
+                                    }
                                 }
                             }
                             Ok(None) => break,
@@ -200,23 +205,24 @@ impl Session {
     }
 }
 
-#[allow(clippy::let_underscore_must_use)]
-async fn handle_stdout_line(line: &str, tx: &mpsc::Sender<SessionEvent>) {
+/// Returns `true` if the event was sent, `false` if the receiver was dropped.
+async fn handle_stdout_line(line: &str, tx: &mpsc::Sender<SessionEvent>) -> bool {
     // Try to parse as JSON status first
     let bytes = line.as_bytes();
     if serde_json::from_slice::<serde_json::Value>(bytes).is_ok() {
         if let Ok(value) = serde_json::from_str(line) {
-            let _ = tx.send(SessionEvent::Status(value)).await;
-            return;
+            return tx.send(SessionEvent::Status(value)).await.is_ok();
         }
     }
 
     // Otherwise classify as a text message (hashcat routes warnings to stdout)
     if let Some(msg) = classify_line(line) {
         if matches!(msg.severity, Severity::Warning | Severity::Error) {
-            let _ = tx.send(SessionEvent::Message(msg)).await;
+            return tx.send(SessionEvent::Message(msg)).await.is_ok();
         }
     }
+
+    true
 }
 
 #[cfg(unix)]
