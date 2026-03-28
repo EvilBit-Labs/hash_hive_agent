@@ -45,6 +45,13 @@ CLAUDE.md
 .windsurfrules
 .windsurf/
 .copilot/
+.codex/
+.gemini/
+.agents/
+.coderabbit.yaml
+.mcp.json
+tessl.json
+.tessl/
 .ai/
 .llm/
 .prompt/
