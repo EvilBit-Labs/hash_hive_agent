@@ -4,7 +4,7 @@ use anyhow::{Context, Result, bail};
 use futures::StreamExt;
 use sha2::{Digest, Sha256};
 use tokio::fs;
-use tokio::io::AsyncWriteExt;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tracing::{debug, info};
 
 /// Download a file from `url` into `dest_dir`, returning the final file path.
@@ -70,19 +70,38 @@ pub async fn download_file(
 }
 
 /// Verify the SHA-256 checksum of a file.
+///
+/// Streams the file in chunks to avoid buffering 100GB+ files in memory.
 pub async fn verify_checksum(path: &Path, expected_hex: &str) -> Result<bool> {
-    let data = fs::read(path)
+    let file = fs::File::open(path)
         .await
-        .context("failed to read file for checksum")?;
+        .context("failed to open file for checksum")?;
 
+    let mut reader = tokio::io::BufReader::new(file);
     let mut hasher = Sha256::new();
-    hasher.update(&data);
+    let mut buf = vec![0_u8; 64 * 1024];
+
+    loop {
+        let n = reader
+            .read(&mut buf)
+            .await
+            .context("failed to read file for checksum")?;
+        if n == 0 {
+            break;
+        }
+        if let Some(chunk) = buf.get(..n) {
+            hasher.update(chunk);
+        }
+    }
+
     let result = hasher.finalize();
     let actual_hex = result
         .iter()
         .fold(String::with_capacity(64), |mut acc, byte| {
             use std::fmt::Write;
-            write!(acc, "{byte:02x}").ok();
+            // Writing to a String is infallible (only OOM would fail, which aborts).
+            #[allow(clippy::let_underscore_must_use)]
+            let _ = write!(acc, "{byte:02x}");
             acc
         });
 

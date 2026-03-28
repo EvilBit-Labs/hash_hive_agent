@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use tokio_util::sync::CancellationToken;
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
 use crate::api::ApiClient;
 use crate::api::types::{CrackResult, TaskDescriptor, TaskProgress, TaskReport, TaskStatus};
@@ -158,29 +158,42 @@ fn build_hashcat_args(task: &TaskDescriptor, task_dir: &std::path::Path) -> Vec<
 }
 
 fn parse_status_progress(status: &serde_json::Value) -> TaskProgress {
-    TaskProgress {
-        keyspace_progress: status
-            .get("progress")
-            .and_then(|p| p.as_array())
-            .and_then(|arr| {
-                let done = arr.first()?.as_f64()?;
-                let total = arr.get(1)?.as_f64()?;
-                if total > 0.0 {
-                    Some(done / total * 100.0)
-                } else {
-                    Some(0.0)
-                }
-            })
-            .unwrap_or(0.0),
-        speed: status
-            .get("devices_status")
-            .and_then(|d| d.as_array())
-            .map_or(0.0, |devices| {
+    let keyspace_progress = status
+        .get("progress")
+        .and_then(|p| p.as_array())
+        .and_then(|arr| {
+            let done = arr.first()?.as_f64()?;
+            let total = arr.get(1)?.as_f64()?;
+            if total > 0.0 {
+                Some(done / total * 100.0)
+            } else {
+                Some(0.0)
+            }
+        })
+        .unwrap_or_else(|| {
+            debug!("missing or unexpected 'progress' field in hashcat status JSON");
+            0.0
+        });
+
+    let speed = status
+        .get("devices_status")
+        .and_then(|d| d.as_array())
+        .map_or_else(
+            || {
+                debug!("missing or unexpected 'devices_status' field in hashcat status JSON");
+                0.0
+            },
+            |devices| {
                 devices
                     .iter()
                     .filter_map(|d| d.get("speed").and_then(serde_json::Value::as_f64))
                     .sum()
-            }),
+            },
+        );
+
+    TaskProgress {
+        keyspace_progress,
+        speed,
         temperature: None,
     }
 }
