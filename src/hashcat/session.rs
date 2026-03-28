@@ -119,11 +119,11 @@ impl Session {
                     result = lines.next_line() => {
                         match result {
                             Ok(Some(line)) => {
-                                if let Some(msg) = classify_line(&line) {
-                                    if stderr_tx.send(SessionEvent::Message(msg)).await.is_err() {
-                                        debug!("event receiver dropped, stopping stderr reader");
-                                        break;
-                                    }
+                                if let Some(msg) = classify_line(&line)
+                                    && stderr_tx.send(SessionEvent::Message(msg)).await.is_err()
+                                {
+                                    debug!("event receiver dropped, stopping stderr reader");
+                                    break;
                                 }
                             }
                             Ok(None) => break,
@@ -209,17 +209,17 @@ impl Session {
 async fn handle_stdout_line(line: &str, tx: &mpsc::Sender<SessionEvent>) -> bool {
     // Try to parse as JSON status first
     let bytes = line.as_bytes();
-    if serde_json::from_slice::<serde_json::Value>(bytes).is_ok() {
-        if let Ok(value) = serde_json::from_str(line) {
-            return tx.send(SessionEvent::Status(value)).await.is_ok();
-        }
+    if serde_json::from_slice::<serde_json::Value>(bytes).is_ok()
+        && let Ok(value) = serde_json::from_str(line)
+    {
+        return tx.send(SessionEvent::Status(value)).await.is_ok();
     }
 
     // Otherwise classify as a text message (hashcat routes warnings to stdout)
-    if let Some(msg) = classify_line(line) {
-        if matches!(msg.severity, Severity::Warning | Severity::Error) {
-            return tx.send(SessionEvent::Message(msg)).await.is_ok();
-        }
+    if let Some(msg) = classify_line(line)
+        && matches!(msg.severity, Severity::Warning | Severity::Error)
+    {
+        return tx.send(SessionEvent::Message(msg)).await.is_ok();
     }
 
     true

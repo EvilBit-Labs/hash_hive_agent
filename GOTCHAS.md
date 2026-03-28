@@ -42,7 +42,6 @@ Known pitfalls and edge cases. If you hit a non-obvious problem, add it here.
 
 ## Dependency Version Constraints
 
-- `sysinfo` 0.36+ requires Rust 1.86+, 0.38+ requires 1.88+ -- pin to `0.35` while `rust-version = "1.85"`.
 - `reqwest` 0.13 renamed feature `rustls-tls` to `rustls` -- use `rustls` in Cargo.toml features.
 - `sha2` 0.11 changed `finalize()` return type -- output no longer implements `LowerHex`. Format bytes manually with `write!(acc, "{byte:02x}")`.
 

@@ -2,7 +2,7 @@
 name = "hash_hive_agent"
 version = "0.1.0"
 edition = "2024"
-rust-version = "1.85"
+rust-version = "1.94"
 authors = ["UncleSp1d3r <unclesp1d3r@evilbitlabs.io>"]
 description = "Distributed hashcat agent for the HashHive platform"
 license = "Apache-2.0"
@@ -199,7 +199,7 @@ service-manager = "0.11.0"
 sha2 = "0.11.0"
 
 # Platform info
-sysinfo = "0.35"
+sysinfo = "0.38"
 
 # Error handling
 thiserror = "2.0.18"
