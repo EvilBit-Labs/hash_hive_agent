@@ -44,23 +44,26 @@ pub async fn download_file(
     }
 
     let total_size = resp.content_length().unwrap_or(0);
-    let progress = if total_size > 0 {
-        let pb = ProgressBar::new(total_size);
-        pb.set_style(
-            ProgressStyle::default_bar()
-                .template("{spinner:.green} [{bar:40.cyan/blue}] {bytes}/{total_bytes} ({bytes_per_sec}, {eta})")
-                .unwrap_or_else(|_| ProgressStyle::default_bar())
-                .progress_chars("#>-"),
-        );
-        pb
-    } else {
-        let pb = ProgressBar::new_spinner();
-        pb.set_style(
-            ProgressStyle::default_spinner()
-                .template("{spinner:.green} {bytes} downloaded ({bytes_per_sec})")
-                .unwrap_or_else(|_| ProgressStyle::default_spinner()),
-        );
-        pb
+    let progress = match total_size {
+        0 => {
+            let pb = ProgressBar::new_spinner();
+            pb.set_style(
+                ProgressStyle::default_spinner()
+                    .template("{spinner:.green} {bytes} downloaded ({bytes_per_sec})")
+                    .unwrap_or_else(|_| ProgressStyle::default_spinner()),
+            );
+            pb
+        }
+        n => {
+            let pb = ProgressBar::new(n);
+            pb.set_style(
+                ProgressStyle::default_bar()
+                    .template("{spinner:.green} [{bar:40.cyan/blue}] {bytes}/{total_bytes} ({bytes_per_sec}, {eta})")
+                    .unwrap_or_else(|_| ProgressStyle::default_bar())
+                    .progress_chars("#>-"),
+            );
+            pb
+        }
     };
 
     let mut file = fs::File::create(&temp_path)

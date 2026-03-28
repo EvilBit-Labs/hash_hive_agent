@@ -58,7 +58,8 @@ pub async fn execute(client: &ApiClient, config: &AgentConfig, task: TaskDescrip
     let cancel = CancellationToken::new();
     let (mut events, mut child) = session.start(cancel.clone()).await?;
 
-    let cracked: Vec<CrackResult> = Vec::new();
+    // TODO: Populate with cracked hashes once hashcat output parsing is implemented.
+    let _cracked: Vec<CrackResult> = Vec::new();
     let mut errors: Vec<String> = Vec::new();
 
     while let Some(event) = events.recv().await {
@@ -100,11 +101,8 @@ pub async fn execute(client: &ApiClient, config: &AgentConfig, task: TaskDescrip
                     | ExitCategory::Unknown => TaskStatus::Failed,
                 };
 
-                let _results = if cracked.is_empty() {
-                    None
-                } else {
-                    Some(cracked.clone())
-                };
+                // TODO: Pass cracked results to report_status once TaskReport
+                // supports a results field in the API contract.
                 let err_list = if errors.is_empty() {
                     None
                 } else {
