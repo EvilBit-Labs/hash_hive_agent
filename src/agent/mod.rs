@@ -4,10 +4,11 @@ pub mod shutdown;
 
 use anyhow::{Context, Result};
 use tokio_util::sync::CancellationToken;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 use url::Url;
 
 use crate::api::ApiClient;
+use crate::api::types::{AgentErrorReport, ErrorSeverity};
 use crate::config::AgentConfig;
 use crate::task;
 
@@ -19,7 +20,9 @@ use shutdown::listen_for_shutdown;
 pub async fn run(config: AgentConfig) -> Result<()> {
     let base_url: Url = config.server_url.parse().context("invalid server URL")?;
 
-    let mut client = ApiClient::new(base_url);
+    let retry_config = crate::api::RetryConfig::from(&config);
+    let mut client =
+        ApiClient::new(base_url, retry_config).context("failed to initialize API client")?;
 
     // Authenticate
     info!("authenticating with server");
@@ -30,7 +33,7 @@ pub async fn run(config: AgentConfig) -> Result<()> {
 
     client.set_session_token(session.session_token);
 
-    if let Some(cfg) = &session.config {
+    if let Some(ref cfg) = session.config {
         info!(
             agent_id = cfg.agent_id,
             project_id = cfg.project_id,
@@ -61,12 +64,22 @@ pub async fn run(config: AgentConfig) -> Result<()> {
     loop {
         match poll_for_task(&client, config.poll_interval, cancel.clone()).await? {
             PollResult::Task(descriptor) => {
-                info!(task_id = descriptor.id, "executing task");
+                let task_id = descriptor.id;
+                info!(task_id, "executing task");
                 if let Err(e) = task::execute(&client, &config, descriptor).await {
-                    error!(error = %e, "task execution failed");
+                    error!(error = %e, task_id, "task execution failed");
+                    let report = AgentErrorReport {
+                        severity: ErrorSeverity::Error,
+                        message: format!("{e:#}"),
+                        context: None,
+                        task_id: Some(task_id),
+                    };
+                    if let Err(report_err) = client.report_error(&report).await {
+                        warn!(error = %report_err, task_id, "failed to report task error to server");
+                    }
                 }
             }
-            PollResult::Idle => continue,
+            PollResult::Idle => {}
             PollResult::Cancelled => {
                 info!("task polling cancelled, shutting down");
                 break;
@@ -75,9 +88,10 @@ pub async fn run(config: AgentConfig) -> Result<()> {
     }
 
     // Graceful shutdown
+    info!("sending final heartbeat");
     send_shutdown_heartbeat(&client).await;
     hb_handle.abort();
 
-    info!("agent stopped");
+    info!("agent stopped cleanly");
     Ok(())
 }

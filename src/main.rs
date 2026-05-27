@@ -1,17 +1,42 @@
-use anyhow::{Context, Result, bail};
+use std::io::IsTerminal;
+
 use clap::Parser;
-use tracing::info;
+use tracing::{info, warn};
 use tracing_subscriber::EnvFilter;
 
 use hash_hive_agent::agent;
 use hash_hive_agent::cli::Cli;
 use hash_hive_agent::config::AgentConfig;
+use hash_hive_agent::config::defaults::DEFAULT_SERVER_URL;
+
+/// Exit code for configuration errors (bad config file, missing token, invalid URL).
+const EXIT_CONFIG: i32 = 2;
+
+/// Exit code for authentication failures (invalid or expired token).
+const EXIT_AUTH: i32 = 3;
+
+/// Exit code for unrecoverable runtime errors (network, hashcat, I/O).
+const EXIT_RUNTIME: i32 = 1;
 
 #[tokio::main]
-async fn main() -> Result<()> {
+#[allow(clippy::exit)]
+async fn main() {
     let cli = Cli::parse();
 
-    init_logging(&cli.log_level, cli.json_logs)?;
+    // Service management subcommands run without logging/config.
+    if let Some(ref cmd) = cli.command {
+        if let Err(e) = hash_hive_agent::service::handle(cmd) {
+            eprintln!("error: {e:#}");
+            std::process::exit(EXIT_RUNTIME);
+        }
+        return;
+    }
+
+    let log_level = resolve_log_level(&cli);
+    if let Err(e) = init_logging(&log_level, cli.json_logs) {
+        eprintln!("failed to initialize logging: {e}");
+        std::process::exit(EXIT_CONFIG);
+    }
 
     info!(
         version = env!("CARGO_PKG_VERSION"),
@@ -19,9 +44,25 @@ async fn main() -> Result<()> {
         "starting hash_hive_agent"
     );
 
+    if let Err(e) = run(cli).await {
+        let code = classify_exit_code(&e);
+        tracing::error!(error = %e, exit_code = code, "agent exited with error");
+        std::process::exit(code);
+    }
+}
+
+async fn run(cli: Cli) -> anyhow::Result<()> {
+    use anyhow::{Context, bail};
+
     // Load config from file + env, then apply CLI overrides
     let config_path = cli.config.as_deref().and_then(|p| p.to_str());
-    let mut config = AgentConfig::load(config_path).context("failed to load configuration")?;
+    let mut config = AgentConfig::load(config_path).context(
+        "failed to load configuration\n\n\
+         Check:\n  \
+         - Config file syntax (YAML/TOML)\n  \
+         - Environment variables (HASH_HIVE_*)\n  \
+         - Duration formats: '30s', '10m', '1h'",
+    )?;
 
     // CLI flags override config file / env
     if let Some(url) = cli.server_url {
@@ -38,17 +79,68 @@ async fn main() -> Result<()> {
         bail!("agent token is required (set HASH_HIVE_AGENT_TOKEN or --agent-token)");
     }
 
+    if config.server_url == DEFAULT_SERVER_URL {
+        warn!(
+            url = DEFAULT_SERVER_URL,
+            "using default server URL (set HASH_HIVE_SERVER_URL to override)"
+        );
+    }
+
     agent::run(config).await
 }
 
-fn init_logging(level: &str, json: bool) -> Result<()> {
+/// Map verbose count to log level, with --verbose overriding --log-level.
+fn resolve_log_level(cli: &Cli) -> String {
+    match cli.verbose {
+        0 => cli.log_level.clone(),
+        1 => "debug".to_owned(),
+        _ => "trace".to_owned(),
+    }
+}
+
+/// Classify an anyhow error chain into an exit code.
+///
+/// Uses error downcasting for type-safe classification rather than string matching.
+fn classify_exit_code(err: &anyhow::Error) -> i32 {
+    // Check the error chain for known typed errors.
+    for cause in err.chain() {
+        if let Some(api_err) = cause.downcast_ref::<hash_hive_agent::api::ApiError>()
+            && matches!(api_err, hash_hive_agent::api::ApiError::Auth { .. })
+        {
+            return EXIT_AUTH;
+        }
+        if cause.downcast_ref::<config::ConfigError>().is_some() {
+            return EXIT_CONFIG;
+        }
+    }
+
+    // Fallback: check context messages for config-related errors that don't
+    // have a typed error (e.g., missing token, bad URL).
+    let msg = format!("{err:#}");
+    if msg.contains("agent token is required") || msg.contains("failed to load configuration") {
+        return EXIT_CONFIG;
+    }
+
+    EXIT_RUNTIME
+}
+
+fn init_logging(level: &str, json: bool) -> anyhow::Result<()> {
+    use anyhow::Context;
+
     let filter = EnvFilter::try_new(level)
-        .or_else(|_| EnvFilter::try_new("info"))
+        .or_else(|e| {
+            eprintln!("warning: invalid log level '{level}': {e}, falling back to 'info'");
+            EnvFilter::try_new("info")
+        })
         .context("failed to create log filter")?;
+
+    let use_ansi =
+        !json && std::io::stderr().is_terminal() && std::env::var_os("NO_COLOR").is_none();
 
     let subscriber = tracing_subscriber::fmt()
         .with_env_filter(filter)
-        .with_target(true);
+        .with_target(true)
+        .with_ansi(use_ansi);
 
     if json {
         subscriber.json().init();

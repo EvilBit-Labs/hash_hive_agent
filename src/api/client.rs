@@ -1,3 +1,7 @@
+use std::future::Future;
+use std::time::Duration;
+
+use backon::{ExponentialBuilder, Retryable};
 use reqwest::{Client, StatusCode};
 use tracing::{debug, warn};
 use url::Url;
@@ -9,15 +13,55 @@ use super::types::{
     ZapResponse,
 };
 
-/// HTTP client for the HashHive Agent API.
+/// Configuration for exponential backoff retry behavior.
+#[derive(Debug, Clone, Copy)]
+pub struct RetryConfig {
+    /// Base delay for exponential backoff.
+    pub backoff_base: Duration,
+    /// Maximum backoff delay cap.
+    pub backoff_max: Duration,
+    /// Maximum number of retry attempts.
+    pub max_retries: u32,
+}
+
+impl From<&crate::config::AgentConfig> for RetryConfig {
+    fn from(cfg: &crate::config::AgentConfig) -> Self {
+        Self {
+            backoff_base: cfg.backoff_base,
+            backoff_max: cfg.backoff_max,
+            max_retries: cfg.max_retries,
+        }
+    }
+}
+
+/// Returns `true` if the error is transient and the request should be retried.
+///
+/// Only server errors (5xx) and demonstrably transient network failures (timeouts
+/// and connection errors) are retryable. Builder errors, decode failures, redirect
+/// loops, body errors, and other permanent `reqwest::Error` variants fail fast.
+fn is_retryable(err: &ApiError) -> bool {
+    match *err {
+        ApiError::Server { .. } => true,
+        ApiError::Request(ref req_err) => req_err.is_timeout() || req_err.is_connect(),
+        ApiError::Auth { .. }
+        | ApiError::NotFound { .. }
+        | ApiError::Parse(_)
+        | ApiError::Unexpected { .. }
+        | ApiError::UrlParse(_) => false,
+    }
+}
+
+/// HTTP client for the `HashHive` Agent API.
 ///
 /// All methods return typed responses or [`ApiError`].
-/// The client is cheaply cloneable (wraps `Arc` internally via `reqwest::Client`).
+/// The client is cloneable; the underlying HTTP connection pool is shared
+/// across clones via `reqwest::Client`.
 #[derive(Debug, Clone)]
 pub struct ApiClient {
     http: Client,
     base_url: Url,
     session_token: Option<String>,
+    retry_config: RetryConfig,
 }
 
 impl ApiClient {
@@ -25,17 +69,21 @@ impl ApiClient {
     ///
     /// `base_url` should include the `/api/v1/agent` prefix,
     /// e.g. `http://localhost:3001/api/v1/agent`.
-    pub fn new(base_url: Url) -> Self {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP client fails to initialize.
+    pub fn new(base_url: Url, retry_config: RetryConfig) -> Result<Self, ApiError> {
         let http = Client::builder()
             .user_agent(format!("hash_hive_agent/{}", env!("CARGO_PKG_VERSION")))
-            .build()
-            .expect("failed to build HTTP client");
+            .build()?;
 
-        Self {
+        Ok(Self {
             http,
             base_url,
             session_token: None,
-        }
+            retry_config,
+        })
     }
 
     /// Store the session token obtained from [`create_session`](Self::create_session).
@@ -44,19 +92,24 @@ impl ApiClient {
     }
 
     /// Authenticate with the server using a pre-shared agent token.
+    ///
+    /// Retries on transient 5xx errors. This assumes the server handles
+    /// duplicate `POST /sessions` calls idempotently (e.g., returns the
+    /// existing session rather than creating a second one).
     pub async fn create_session(
         &self,
         agent_token: &str,
     ) -> Result<CreateSessionResponse, ApiError> {
-        let url = self.url("sessions");
-        let body = CreateSessionRequest {
-            token: agent_token.to_owned(),
-        };
-
-        debug!(%url, "creating agent session");
-
-        let resp = self.http.post(url).json(&body).send().await?;
-        self.handle_response(resp).await
+        self.with_retry(|| async {
+            let url = self.url("sessions")?;
+            let body = CreateSessionRequest {
+                token: agent_token.to_owned(),
+            };
+            debug!(%url, "creating agent session");
+            let resp = self.http.post(url).json(&body).send().await?;
+            self.handle_response(resp).await
+        })
+        .await
     }
 
     /// Send a heartbeat with current status and capabilities.
@@ -64,16 +117,22 @@ impl ApiClient {
         &self,
         heartbeat: &HeartbeatRequest,
     ) -> Result<AcknowledgedResponse, ApiError> {
-        let url = self.url("heartbeat");
-        let resp = self.authed_post(&url).json(heartbeat).send().await?;
-        self.handle_response(resp).await
+        self.with_retry(|| async {
+            let url = self.url("heartbeat")?;
+            let resp = self.authed_post(&url).json(heartbeat).send().await?;
+            self.handle_response(resp).await
+        })
+        .await
     }
 
     /// Poll for the next available task.
     pub async fn get_next_task(&self) -> Result<NextTaskResponse, ApiError> {
-        let url = self.url("tasks/next");
-        let resp = self.authed_post(&url).send().await?;
-        self.handle_response(resp).await
+        self.with_retry(|| async {
+            let url = self.url("tasks/next")?;
+            let resp = self.authed_post(&url).send().await?;
+            self.handle_response(resp).await
+        })
+        .await
     }
 
     /// Report task progress, results, or completion.
@@ -82,9 +141,12 @@ impl ApiClient {
         task_id: i64,
         report: &TaskReport,
     ) -> Result<AcknowledgedResponse, ApiError> {
-        let url = self.url(&format!("tasks/{task_id}/report"));
-        let resp = self.authed_post(&url).json(report).send().await?;
-        self.handle_response(resp).await
+        self.with_retry(|| async {
+            let url = self.url(&format!("tasks/{task_id}/report"))?;
+            let resp = self.authed_post(&url).json(report).send().await?;
+            self.handle_response(resp).await
+        })
+        .await
     }
 
     /// Fetch cracked hash values (zaps) for a task, optionally filtered by time.
@@ -94,18 +156,21 @@ impl ApiClient {
         since: Option<&str>,
         limit: Option<i32>,
     ) -> Result<ZapResponse, ApiError> {
-        let mut url = self.url(&format!("tasks/{task_id}/zaps"));
-        {
-            let mut query = url.query_pairs_mut();
-            if let Some(s) = since {
-                query.append_pair("since", s);
+        self.with_retry(|| async {
+            let mut url = self.url(&format!("tasks/{task_id}/zaps"))?;
+            {
+                let mut query = url.query_pairs_mut();
+                if let Some(s) = since {
+                    query.append_pair("since", s);
+                }
+                if let Some(l) = limit {
+                    query.append_pair("limit", &l.to_string());
+                }
             }
-            if let Some(l) = limit {
-                query.append_pair("limit", &l.to_string());
-            }
-        }
-        let resp = self.authed_get(&url).send().await?;
-        self.handle_response(resp).await
+            let resp = self.authed_get(&url).send().await?;
+            self.handle_response(resp).await
+        })
+        .await
     }
 
     /// Submit benchmark results.
@@ -113,9 +178,12 @@ impl ApiClient {
         &self,
         submission: &BenchmarkSubmission,
     ) -> Result<AcknowledgedResponse, ApiError> {
-        let url = self.url("benchmark");
-        let resp = self.authed_post(&url).json(submission).send().await?;
-        self.handle_response(resp).await
+        self.with_retry(|| async {
+            let url = self.url("benchmark")?;
+            let resp = self.authed_post(&url).json(submission).send().await?;
+            self.handle_response(resp).await
+        })
+        .await
     }
 
     /// Report an agent error to the server.
@@ -123,22 +191,68 @@ impl ApiClient {
         &self,
         error: &AgentErrorReport,
     ) -> Result<AcknowledgedResponse, ApiError> {
-        let url = self.url("errors");
-        let resp = self.authed_post(&url).json(error).send().await?;
-        self.handle_response(resp).await
+        self.with_retry(|| async {
+            let url = self.url("errors")?;
+            let resp = self.authed_post(&url).json(error).send().await?;
+            self.handle_response(resp).await
+        })
+        .await
+    }
+
+    // -----------------------------------------------------------------------
+    // Retry
+    // -----------------------------------------------------------------------
+
+    /// Execute an async operation with exponential backoff and jitter.
+    ///
+    /// Only transient errors ([`ApiError::Server`] and [`ApiError::Request`])
+    /// are retried; all other variants fail immediately.
+    pub(crate) async fn with_retry<F, Fut, T>(&self, operation: F) -> Result<T, ApiError>
+    where
+        F: FnMut() -> Fut,
+        Fut: Future<Output = Result<T, ApiError>>,
+    {
+        // u32 fits in usize on all supported 64-bit platforms.
+        // Fallback is unreachable but satisfies the type system for hypothetical 16-bit targets.
+        let max_times = usize::try_from(self.retry_config.max_retries).unwrap_or(usize::MAX);
+
+        let backoff = ExponentialBuilder::default()
+            .with_min_delay(self.retry_config.backoff_base)
+            .with_max_delay(self.retry_config.backoff_max)
+            .with_max_times(max_times)
+            .with_jitter();
+
+        // Counts how many attempts have failed so far (1-based).
+        // The notify callback fires after each failure, before the retry delay.
+        let attempt = std::sync::atomic::AtomicU32::new(1);
+
+        operation
+            .retry(backoff)
+            .sleep(tokio::time::sleep)
+            .when(is_retryable)
+            .notify(|err, dur| {
+                let n = attempt.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                warn!(
+                    error = %err,
+                    attempt = n,
+                    max_retries = self.retry_config.max_retries,
+                    delay = ?dur,
+                    "retrying API request"
+                );
+            })
+            .await
     }
 
     // -----------------------------------------------------------------------
     // Helpers
     // -----------------------------------------------------------------------
 
-    fn url(&self, path: &str) -> Url {
+    fn url(&self, path: &str) -> Result<Url, ApiError> {
         let mut url = self.base_url.clone();
-        // Ensure trailing slash before joining
         if !url.path().ends_with('/') {
             url.set_path(&format!("{}/", url.path()));
         }
-        url.join(path).expect("invalid URL path segment")
+        Ok(url.join(path)?)
     }
 
     fn authed_post(&self, url: &Url) -> reqwest::RequestBuilder {
@@ -191,13 +305,172 @@ impl ApiClient {
     }
 
     async fn extract_error_message(&self, resp: reqwest::Response) -> String {
-        let body = resp.text().await.unwrap_or_default();
-        match serde_json::from_str::<ErrorResponse>(&body) {
-            Ok(err_resp) => err_resp.error.and_then(|e| e.message).unwrap_or(body),
-            Err(_) => {
-                warn!("could not parse error response body");
-                body
+        let status = resp.status();
+        let body = match resp.text().await {
+            Ok(text) => text,
+            Err(e) => {
+                warn!(error = %e, %status, "failed to read error response body");
+                return format!("(could not read response body: {e})");
             }
+        };
+        if let Ok(err_resp) = serde_json::from_str::<ErrorResponse>(&body) {
+            err_resp.error.and_then(|e| e.message).unwrap_or(body)
+        } else {
+            warn!(%status, "could not parse error response body as JSON");
+            body
         }
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::expect_used, clippy::unwrap_used)]
+mod tests {
+    use reqwest::StatusCode;
+
+    use super::is_retryable;
+    use crate::api::error::ApiError;
+
+    #[test]
+    fn server_error_is_retryable() {
+        let err = ApiError::Server {
+            status: StatusCode::INTERNAL_SERVER_ERROR,
+            message: "internal".to_owned(),
+        };
+        assert!(is_retryable(&err));
+    }
+
+    #[test]
+    fn bad_gateway_is_retryable() {
+        let err = ApiError::Server {
+            status: StatusCode::BAD_GATEWAY,
+            message: "bad gateway".to_owned(),
+        };
+        assert!(is_retryable(&err));
+    }
+
+    #[test]
+    fn service_unavailable_is_retryable() {
+        let err = ApiError::Server {
+            status: StatusCode::SERVICE_UNAVAILABLE,
+            message: "unavailable".to_owned(),
+        };
+        assert!(is_retryable(&err));
+    }
+
+    #[tokio::test]
+    async fn timeout_request_error_is_retryable() {
+        // Use a wiremock server with a delayed response to deterministically trigger a timeout.
+        let server = wiremock::MockServer::start().await;
+
+        wiremock::Mock::given(wiremock::matchers::any())
+            .respond_with(
+                wiremock::ResponseTemplate::new(200)
+                    .set_body_string("ok")
+                    .set_delay(std::time::Duration::from_secs(5)),
+            )
+            .mount(&server)
+            .await;
+
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_millis(10))
+            .build()
+            .expect("client build");
+
+        let result = client.get(server.uri()).send().await;
+
+        let req_err = result.expect_err("should timeout");
+        assert!(
+            req_err.is_timeout(),
+            "expected timeout error, got: {req_err}"
+        );
+
+        let err = ApiError::Request(req_err);
+        assert!(is_retryable(&err));
+    }
+
+    #[test]
+    fn auth_error_is_not_retryable() {
+        let err = ApiError::Auth {
+            message: "unauthorized".to_owned(),
+        };
+        assert!(!is_retryable(&err));
+    }
+
+    #[test]
+    fn not_found_error_is_not_retryable() {
+        let err = ApiError::NotFound {
+            message: "not found".to_owned(),
+        };
+        assert!(!is_retryable(&err));
+    }
+
+    #[test]
+    fn parse_error_is_not_retryable() {
+        let json_err = serde_json::from_str::<String>("not json").unwrap_err();
+        let err = ApiError::Parse(json_err);
+        assert!(!is_retryable(&err));
+    }
+
+    #[test]
+    fn unexpected_error_is_not_retryable() {
+        let err = ApiError::Unexpected {
+            status: StatusCode::IM_A_TEAPOT,
+            body: "teapot".to_owned(),
+        };
+        assert!(!is_retryable(&err));
+    }
+
+    #[test]
+    fn url_parse_error_is_not_retryable() {
+        let parse_err = url::Url::parse("://invalid").unwrap_err();
+        let err = ApiError::UrlParse(parse_err);
+        assert!(!is_retryable(&err));
+    }
+
+    /// Verify that connection errors (server unreachable) are retryable.
+    ///
+    /// Uses `192.0.2.1` (RFC 5737 TEST-NET-1) which is guaranteed unroutable,
+    /// triggering a connect error deterministically.
+    #[tokio::test]
+    async fn connect_request_error_is_retryable() {
+        let client = reqwest::Client::builder()
+            .connect_timeout(std::time::Duration::from_millis(50))
+            .build()
+            .expect("client build");
+
+        let result = client.get("http://192.0.2.1:1/unreachable").send().await;
+
+        let req_err = result.expect_err("should fail to connect");
+        assert!(
+            req_err.is_connect(),
+            "expected connect error, got: {req_err}"
+        );
+
+        let err = ApiError::Request(req_err);
+        assert!(is_retryable(&err));
+    }
+
+    /// Verify that non-transient `Request` errors (e.g., invalid URL scheme) are NOT retryable.
+    ///
+    /// Guards against a regression where someone broadens `Request(_) => true`.
+    #[test]
+    fn non_transient_request_error_is_not_retryable() {
+        let client = reqwest::Client::new();
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("runtime");
+
+        let result = rt.block_on(async { client.get("ht!tp://invalid").send().await });
+
+        let req_err = result.expect_err("should fail with request error");
+        assert!(!req_err.is_timeout(), "should not be timeout");
+        assert!(!req_err.is_connect(), "should not be connect");
+
+        let err = ApiError::Request(req_err);
+        assert!(
+            !is_retryable(&err),
+            "non-transient request errors must not be retryable"
+        );
     }
 }

@@ -2,15 +2,17 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
 use futures::StreamExt;
+use indicatif::{ProgressBar, ProgressStyle};
 use sha2::{Digest, Sha256};
 use tokio::fs;
-use tokio::io::AsyncWriteExt;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tracing::{debug, info};
 
 /// Download a file from `url` into `dest_dir`, returning the final file path.
 ///
 /// Uses streaming to avoid buffering 100GB+ files in memory.
 /// Writes to a temporary file first, then atomically renames on success.
+#[allow(clippy::arithmetic_side_effects, clippy::as_conversions)]
 pub async fn download_file(
     client: &reqwest::Client,
     url: &str,
@@ -19,7 +21,7 @@ pub async fn download_file(
     let parsed: url::Url = url.parse().context("invalid download URL")?;
     let filename = parsed
         .path_segments()
-        .and_then(|s| s.last())
+        .and_then(|mut s| s.next_back())
         .unwrap_or("download");
 
     let dest_path = dest_dir.join(filename);
@@ -41,6 +43,29 @@ pub async fn download_file(
         bail!("download failed with status {}", resp.status());
     }
 
+    let total_size = resp.content_length().unwrap_or(0);
+    let progress = match total_size {
+        0 => {
+            let pb = ProgressBar::new_spinner();
+            pb.set_style(
+                ProgressStyle::default_spinner()
+                    .template("{spinner:.green} {bytes} downloaded ({bytes_per_sec})")
+                    .unwrap_or_else(|_| ProgressStyle::default_spinner()),
+            );
+            pb
+        }
+        n => {
+            let pb = ProgressBar::new(n);
+            pb.set_style(
+                ProgressStyle::default_bar()
+                    .template("{spinner:.green} [{bar:40.cyan/blue}] {bytes}/{total_bytes} ({bytes_per_sec}, {eta})")
+                    .unwrap_or_else(|_| ProgressStyle::default_bar())
+                    .progress_chars("#>-"),
+            );
+            pb
+        }
+    };
+
     let mut file = fs::File::create(&temp_path)
         .await
         .context("failed to create temp file")?;
@@ -49,12 +74,15 @@ pub async fn download_file(
     let mut bytes_written: u64 = 0;
 
     while let Some(chunk) = stream.next().await {
-        let chunk = chunk.context("error reading download stream")?;
-        file.write_all(&chunk)
+        let data = chunk.context("error reading download stream")?;
+        file.write_all(&data)
             .await
             .context("error writing to temp file")?;
-        bytes_written += chunk.len() as u64;
+        bytes_written += data.len() as u64;
+        progress.set_position(bytes_written);
     }
+
+    progress.finish_and_clear();
 
     file.flush().await.context("failed to flush temp file")?;
     drop(file);
@@ -69,18 +97,37 @@ pub async fn download_file(
 }
 
 /// Verify the SHA-256 checksum of a file.
+///
+/// Streams the file in chunks to avoid buffering 100GB+ files in memory.
 pub async fn verify_checksum(path: &Path, expected_hex: &str) -> Result<bool> {
-    let data = fs::read(path)
+    let file = fs::File::open(path)
         .await
-        .context("failed to read file for checksum")?;
+        .context("failed to open file for checksum")?;
 
+    let mut reader = tokio::io::BufReader::new(file);
     let mut hasher = Sha256::new();
-    hasher.update(&data);
+    let mut buf = vec![0_u8; 64 * 1024];
+
+    loop {
+        let n = reader
+            .read(&mut buf)
+            .await
+            .context("failed to read file for checksum")?;
+        if n == 0 {
+            break;
+        }
+        if let Some(chunk) = buf.get(..n) {
+            hasher.update(chunk);
+        }
+    }
+
     let result = hasher.finalize();
     let actual_hex = result
         .iter()
         .fold(String::with_capacity(64), |mut acc, byte| {
             use std::fmt::Write;
+            // Writing to a String is infallible (only OOM would fail, which aborts).
+            #[allow(clippy::let_underscore_must_use)]
             let _ = write!(acc, "{byte:02x}");
             acc
         });

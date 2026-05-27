@@ -1,6 +1,6 @@
 # Gotchas
 
-Known pitfalls and edge cases. Referenced from AGENTS.md.
+Known pitfalls and edge cases. If you hit a non-obvious problem, add it here.
 
 ## Hashcat Output Routing
 
@@ -15,6 +15,13 @@ Known pitfalls and edge cases. Referenced from AGENTS.md.
 - `unwrap_used` is **denied** -- use `?` with `anyhow`/`thiserror`, or handle the error explicitly.
 - `panic` is **denied** -- use `bail!` or return `Err` instead.
 - `expect_used` is **warned** -- prefer `context()` from anyhow.
+- `warnings = "deny"` makes ALL warnings fatal, including `dead_code` and `unfulfilled_lint_expectations` -- `#[expect(dead_code)]` on items that are transitively reachable will itself error.
+- `as_conversions` is **warned** -- use `.try_into().unwrap_or(fallback)` or `.into()` instead of `as` casts.
+- `pattern_type_mismatch` is **warned** -- use `match *err` when matching on `&T` references, not `match err`.
+- `match_same_arms` is **warned** -- merge match arms with identical bodies using `|`.
+- `missing_const_for_fn` is **warned** -- add `const` to pure functions that qualify.
+- `redundant_closure` is **warned** -- use `.when(is_retryable)` not `.when(|e| is_retryable(e))`.
+- `expect_used`, `unwrap_used`, `panic`, `indexing_slicing` are **warned/denied** in production but allowed in `#[cfg(test)]` modules and integration tests via module-level `#[allow(...)]`.
 
 ## File Downloads
 
@@ -24,7 +31,24 @@ Known pitfalls and edge cases. Referenced from AGENTS.md.
 ## Cross-Platform
 
 - Hashcat session file location varies by OS: `~/.local/share/hashcat/sessions/` (Linux), `~/.hashcat/sessions/` (legacy), or next to the binary (Windows).
-- `os.Symlink` equivalents require elevated privileges on Windows -- test helpers should skip symlink tests on Windows.
+- Symlinks require elevated privileges on Windows -- test helpers should skip symlink tests on Windows.
+
+## Pre-commit Hooks
+
+- `rustfmt`, `mdformat`, and `cargo-sort` hooks auto-fix files on first run, causing the commit to fail. Re-stage modified files and retry.
+- PostToolUse hooks (cargo fmt, clippy) may restructure code after edits -- always re-read modified files before making dependent changes to avoid working against stale assumptions.
+- `cargo-sort` hook rev may auto-update in `.pre-commit-config.yaml` -- stage the updated config alongside your commit.
+- `cargo-machete` detects unused dependencies -- remove them before committing.
+
+## Dependency Version Constraints
+
+- `reqwest` 0.13 renamed feature `rustls-tls` to `rustls` -- use `rustls` in Cargo.toml features.
+- `sha2` 0.11 changed `finalize()` return type -- output no longer implements `LowerHex`. Format bytes manually with `write!(acc, "{byte:02x}")`.
+
+## Retry Classification Testing
+
+- `reqwest::Error` has no public constructors -- test `is_retryable` by producing real errors. Timeouts use a `wiremock::MockServer` with a delayed response and a short client timeout. Connect errors use `192.0.2.1:1` (RFC 5737 TEST-NET-1, guaranteed unroutable) with a short `connect_timeout`. Non-transient request errors use an invalid URL scheme (e.g., `ht!tp://invalid`).
+- Only `is_timeout()` and `is_connect()` are retryable for `ApiError::Request`; `is_request()` includes permanent builder/decode errors.
 
 ## Exit Codes
 

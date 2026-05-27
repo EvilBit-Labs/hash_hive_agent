@@ -9,6 +9,7 @@ use crate::api::ApiClient;
 use crate::api::types::TaskDescriptor;
 
 /// Outcome of a single poll cycle.
+#[non_exhaustive]
 pub enum PollResult {
     /// A task was assigned to this agent.
     Task(TaskDescriptor),

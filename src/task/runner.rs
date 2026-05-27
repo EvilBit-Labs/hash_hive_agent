@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use tokio_util::sync::CancellationToken;
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
 use crate::api::ApiClient;
 use crate::api::types::{CrackResult, TaskDescriptor, TaskProgress, TaskReport, TaskStatus};
@@ -49,8 +49,7 @@ pub async fn execute(client: &ApiClient, config: &AgentConfig, task: TaskDescrip
     let hashcat_path = config
         .hashcat_path
         .as_ref()
-        .map(|p| p.to_owned())
-        .unwrap_or_else(|| "hashcat".into());
+        .map_or_else(|| "hashcat".into(), std::borrow::ToOwned::to_owned);
 
     let args = build_hashcat_args(&task, &task_dir);
     let session = Session::new(hashcat_path, task_id, args);
@@ -59,16 +58,19 @@ pub async fn execute(client: &ApiClient, config: &AgentConfig, task: TaskDescrip
     let cancel = CancellationToken::new();
     let (mut events, mut child) = session.start(cancel.clone()).await?;
 
-    let cracked: Vec<CrackResult> = Vec::new();
+    // TODO: Populate with cracked hashes once hashcat output parsing is implemented.
+    let _cracked: Vec<CrackResult> = Vec::new();
     let mut errors: Vec<String> = Vec::new();
 
     while let Some(event) = events.recv().await {
         match event {
             SessionEvent::Status(status) => {
-                let progress = parse_status_progress(&status);
-                report_status(client, task_id, TaskStatus::Running, progress, None)
-                    .await
-                    .ok();
+                let progress = Some(parse_status_progress(&status));
+                if let Err(e) =
+                    report_status(client, task_id, TaskStatus::Running, progress, None).await
+                {
+                    warn!(error = %e, task_id, "failed to report task progress");
+                }
             }
             SessionEvent::Message(msg) => {
                 info!(
@@ -92,14 +94,15 @@ pub async fn execute(client: &ApiClient, config: &AgentConfig, task: TaskDescrip
                 let final_status = match exit_info.category {
                     ExitCategory::Success => TaskStatus::Completed,
                     ExitCategory::Exhausted => TaskStatus::Exhausted,
-                    _ => TaskStatus::Failed,
+                    ExitCategory::Aborted
+                    | ExitCategory::RuntimeError
+                    | ExitCategory::GpuError
+                    | ExitCategory::InternalError
+                    | ExitCategory::Unknown => TaskStatus::Failed,
                 };
 
-                let _results = if cracked.is_empty() {
-                    None
-                } else {
-                    Some(cracked.clone())
-                };
+                // TODO: Pass cracked results to report_status once TaskReport
+                // supports a results field in the API contract.
                 let err_list = if errors.is_empty() {
                     None
                 } else {
@@ -127,6 +130,7 @@ pub async fn execute(client: &ApiClient, config: &AgentConfig, task: TaskDescrip
     Ok(())
 }
 
+#[allow(clippy::arithmetic_side_effects)]
 fn build_hashcat_args(task: &TaskDescriptor, task_dir: &std::path::Path) -> Vec<String> {
     let mut args = vec![
         "-m".to_owned(),
@@ -151,33 +155,45 @@ fn build_hashcat_args(task: &TaskDescriptor, task_dir: &std::path::Path) -> Vec<
     args
 }
 
-fn parse_status_progress(status: &serde_json::Value) -> Option<TaskProgress> {
-    Some(TaskProgress {
-        keyspace_progress: status
-            .get("progress")
-            .and_then(|p| p.as_array())
-            .and_then(|arr| {
-                let done = arr.first()?.as_f64()?;
-                let total = arr.get(1)?.as_f64()?;
-                if total > 0.0 {
-                    Some(done / total * 100.0)
-                } else {
-                    Some(0.0)
-                }
-            })
-            .unwrap_or(0.0),
-        speed: status
-            .get("devices_status")
-            .and_then(|d| d.as_array())
-            .map(|devices| {
+fn parse_status_progress(status: &serde_json::Value) -> TaskProgress {
+    let keyspace_progress = status
+        .get("progress")
+        .and_then(|p| p.as_array())
+        .and_then(|arr| {
+            let done = arr.first()?.as_f64()?;
+            let total = arr.get(1)?.as_f64()?;
+            if total > 0.0 {
+                Some(done / total * 100.0)
+            } else {
+                Some(0.0)
+            }
+        })
+        .unwrap_or_else(|| {
+            debug!("missing or unexpected 'progress' field in hashcat status JSON");
+            0.0
+        });
+
+    let speed = status
+        .get("devices_status")
+        .and_then(|d| d.as_array())
+        .map_or_else(
+            || {
+                debug!("missing or unexpected 'devices_status' field in hashcat status JSON");
+                0.0
+            },
+            |devices| {
                 devices
                     .iter()
-                    .filter_map(|d| d.get("speed").and_then(|s| s.as_f64()))
+                    .filter_map(|d| d.get("speed").and_then(serde_json::Value::as_f64))
                     .sum()
-            })
-            .unwrap_or(0.0),
+            },
+        );
+
+    TaskProgress {
+        keyspace_progress,
+        speed,
         temperature: None,
-    })
+    }
 }
 
 async fn report_status(

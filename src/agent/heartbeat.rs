@@ -20,7 +20,7 @@ pub async fn run_heartbeat_loop(
     debug!(?interval, "starting heartbeat loop");
 
     loop {
-        let heartbeat = build_heartbeat().await;
+        let heartbeat = build_heartbeat();
 
         match client.send_heartbeat(&heartbeat).await {
             Ok(resp) => {
@@ -57,7 +57,7 @@ pub async fn send_shutdown_heartbeat(client: &ApiClient) {
     }
 }
 
-async fn build_heartbeat() -> HeartbeatRequest {
+fn build_heartbeat() -> HeartbeatRequest {
     let device_info = platform::collect_device_info();
 
     HeartbeatRequest {

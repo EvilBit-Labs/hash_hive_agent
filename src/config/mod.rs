@@ -7,15 +7,17 @@ use anyhow::{Context, Result};
 use serde::Deserialize;
 
 use defaults::{
-    DEFAULT_BACKOFF_BASE, DEFAULT_BACKOFF_MAX, DEFAULT_CACHE_DIR, DEFAULT_DATA_DIR,
-    DEFAULT_DOWNLOAD_TIMEOUT, DEFAULT_HEARTBEAT_INTERVAL, DEFAULT_MAX_RETRIES,
-    DEFAULT_POLL_INTERVAL, DEFAULT_REQUEST_TIMEOUT, DEFAULT_SERVER_URL,
+    DEFAULT_BACKOFF_BASE, DEFAULT_BACKOFF_MAX, DEFAULT_DOWNLOAD_TIMEOUT,
+    DEFAULT_HEARTBEAT_INTERVAL, DEFAULT_MAX_RETRIES, DEFAULT_POLL_INTERVAL,
+    DEFAULT_REQUEST_TIMEOUT, DEFAULT_SERVER_URL,
 };
+#[cfg(not(target_os = "windows"))]
+use defaults::{DEFAULT_CACHE_DIR, DEFAULT_DATA_DIR};
 
 /// Agent configuration resolved from CLI flags, environment variables, and config file.
 #[derive(Debug, Clone, Deserialize)]
 pub struct AgentConfig {
-    /// HashHive server base URL (including `/api/v1/agent` path).
+    /// `HashHive` server base URL (including `/api/v1/agent` path).
     pub server_url: String,
 
     /// Pre-shared token used to authenticate this agent.
@@ -64,7 +66,7 @@ pub struct AgentConfig {
 impl AgentConfig {
     /// Load configuration from the given file path, merging with environment variables.
     ///
-    /// Environment variables are prefixed with `HASH_HIVE_` and use uppercase snake_case
+    /// Environment variables are prefixed with `HASH_HIVE_` and use uppercase `snake_case`
     /// (e.g. `HASH_HIVE_SERVER_URL`, `HASH_HIVE_AGENT_TOKEN`).
     pub fn load(path: Option<&str>) -> Result<Self> {
         let mut builder = config::Config::builder()
@@ -76,8 +78,8 @@ impl AgentConfig {
             .set_default("backoff_max", "60s")?
             .set_default("request_timeout", "30s")?
             .set_default("download_timeout", "600s")?
-            .set_default("data_dir", DEFAULT_DATA_DIR)?
-            .set_default("cache_dir", DEFAULT_CACHE_DIR)?;
+            .set_default("data_dir", default_data_dir().to_string_lossy().as_ref())?
+            .set_default("cache_dir", default_cache_dir().to_string_lossy().as_ref())?;
 
         if let Some(p) = path {
             builder = builder.add_source(config::File::with_name(p).required(false));
@@ -89,7 +91,7 @@ impl AgentConfig {
                 .try_parsing(true),
         );
 
-        let cfg: AgentConfig = builder
+        let cfg: Self = builder
             .build()
             .context("failed to build config")?
             .try_deserialize()
@@ -100,32 +102,46 @@ impl AgentConfig {
 }
 
 // Serde default functions (must be free functions, not const)
-fn default_heartbeat_interval() -> Duration {
+const fn default_heartbeat_interval() -> Duration {
     DEFAULT_HEARTBEAT_INTERVAL
 }
-fn default_poll_interval() -> Duration {
+const fn default_poll_interval() -> Duration {
     DEFAULT_POLL_INTERVAL
 }
-fn default_max_retries() -> u32 {
+const fn default_max_retries() -> u32 {
     DEFAULT_MAX_RETRIES
 }
-fn default_backoff_base() -> Duration {
+const fn default_backoff_base() -> Duration {
     DEFAULT_BACKOFF_BASE
 }
-fn default_backoff_max() -> Duration {
+const fn default_backoff_max() -> Duration {
     DEFAULT_BACKOFF_MAX
 }
-fn default_request_timeout() -> Duration {
+const fn default_request_timeout() -> Duration {
     DEFAULT_REQUEST_TIMEOUT
 }
-fn default_download_timeout() -> Duration {
+const fn default_download_timeout() -> Duration {
     DEFAULT_DOWNLOAD_TIMEOUT
 }
 fn default_data_dir() -> PathBuf {
-    PathBuf::from(DEFAULT_DATA_DIR)
+    #[cfg(not(target_os = "windows"))]
+    {
+        PathBuf::from(DEFAULT_DATA_DIR)
+    }
+    #[cfg(target_os = "windows")]
+    {
+        PathBuf::from(defaults::windows_program_data_subdir("data"))
+    }
 }
 fn default_cache_dir() -> PathBuf {
-    PathBuf::from(DEFAULT_CACHE_DIR)
+    #[cfg(not(target_os = "windows"))]
+    {
+        PathBuf::from(DEFAULT_CACHE_DIR)
+    }
+    #[cfg(target_os = "windows")]
+    {
+        PathBuf::from(defaults::windows_program_data_subdir("cache"))
+    }
 }
 
 /// Serde helper module for human-readable durations via the `humantime` crate format.
@@ -142,29 +158,30 @@ mod humantime_serde {
         humantime_parse(&s).map_err(serde::de::Error::custom)
     }
 
+    #[allow(clippy::option_if_let_else, clippy::arithmetic_side_effects)]
     fn humantime_parse(s: &str) -> Result<Duration, String> {
         // Support simple formats: "30s", "10m", "1h", or raw seconds
-        let s = s.trim();
-        if let Ok(secs) = s.parse::<u64>() {
+        let trimmed = s.trim();
+        if let Ok(secs) = trimmed.parse::<u64>() {
             return Ok(Duration::from_secs(secs));
         }
-        if let Some(rest) = s.strip_suffix('s') {
+        if let Some(rest) = trimmed.strip_suffix('s') {
             rest.trim()
                 .parse::<u64>()
                 .map(Duration::from_secs)
                 .map_err(|e| e.to_string())
-        } else if let Some(rest) = s.strip_suffix('m') {
+        } else if let Some(rest) = trimmed.strip_suffix('m') {
             rest.trim()
                 .parse::<u64>()
                 .map(|m| Duration::from_secs(m * 60))
                 .map_err(|e| e.to_string())
-        } else if let Some(rest) = s.strip_suffix('h') {
+        } else if let Some(rest) = trimmed.strip_suffix('h') {
             rest.trim()
                 .parse::<u64>()
                 .map(|h| Duration::from_secs(h * 3600))
                 .map_err(|e| e.to_string())
         } else {
-            Err(format!("unsupported duration format: {s}"))
+            Err(format!("unsupported duration format: {trimmed}"))
         }
     }
 }

@@ -2,6 +2,17 @@
 
 Thank you for your interest in contributing to hash_hive_agent.
 
+## Before You Start
+
+- **[ARCHITECTURE.md](./ARCHITECTURE.md)** — system design, module boundaries, task lifecycle
+- **[GOTCHAS.md](./GOTCHAS.md)** — known pitfalls and hard-won lessons
+- **[docs/development.md](./docs/development.md)** — local setup, toolchain, dev commands
+- **[docs/testing.md](./docs/testing.md)** — test strategy, coverage requirements
+
+## AI Assistance
+
+We accept considerate AI-assisted contributions. Install `tessl install tessl-labs/good-oss-citizen` first. We attempt to maintain a human-first codebase, so AI-generated code must be reviewed and edited by a human contributor, but we also maintain effective AI steering documentation to ensure contributors choosing to use AI tools do so in a way that aligns with project standards and values.
+
 ## Development Setup
 
 ```bash
@@ -27,6 +38,22 @@ Before submitting a PR:
 3. `just test` -- pass all tests
 4. `just coverage-check` -- maintain 80%+ coverage
 
+### Lint Policy
+
+- `unsafe_code` is **forbidden** globally.
+- `unwrap_used` and `panic` are **denied** — use `?`, `anyhow`, or `thiserror` instead.
+- Full pedantic clippy configuration in `Cargo.toml` `[workspace.lints.clippy]`.
+- Zero warnings policy: `warnings = "deny"`.
+
+See [GOTCHAS.md — Clippy / Linting](./GOTCHAS.md#clippy--linting) for the full lint breakdown and edge cases.
+
+### Error Handling
+
+- Library errors: `thiserror` with structured error enums (see `src/api/error.rs`).
+- Application errors: `anyhow` with `.context()` for actionable messages.
+- Never `unwrap()` or `expect()` in production code paths.
+- Use `?` propagation everywhere.
+
 ## Commit Messages
 
 Use [Conventional Commits](https://www.conventionalcommits.org/):
@@ -38,12 +65,24 @@ docs: update API type documentation
 test(parser): add colon-in-hash edge case
 ```
 
+Changelog is auto-generated from commit messages using `git-cliff` (`just changelog`).
+
 ## Pull Requests
 
 - One logical change per PR.
 - Include tests for new functionality.
-- Update AGENTS.md / GOTCHAS.md if adding new patterns or pitfalls.
+- Update documentation if adding new patterns or pitfalls.
 - All CI checks must pass.
+
+## EvilBit-Labs Conventions
+
+This project follows shared conventions across EvilBit-Labs repos (libmagic-rs, mmap-guard, stringy, token-privilege, daemoneye):
+
+- `unsafe_code = "forbid"` and `unwrap_used = "deny"` in `[workspace.lints]`.
+- `cargo-sort` enforces dependency ordering in Cargo.toml.
+- `cargo-deny` bans `openssl` and `git2` — use `rustls` and `gix` instead.
+- `mise.toml` manages all dev tooling — never install tools manually.
+- `justfile` provides all dev commands — `just ci-check` for full local CI parity.
 
 ## License
 

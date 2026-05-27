@@ -2,7 +2,7 @@
 name = "hash_hive_agent"
 version = "0.1.0"
 edition = "2024"
-rust-version = "1.85"
+rust-version = "1.94"
 authors = ["UncleSp1d3r <unclesp1d3r@evilbitlabs.io>"]
 description = "Distributed hashcat agent for the HashHive platform"
 license = "Apache-2.0"
@@ -163,7 +163,8 @@ name = "hash-hive-agent"
 path = "src/main.rs"
 
 [dependencies]
-anyhow    = "1.0.102"
+anyhow = "1.0.102"
+backon = "1.6.0"
 
 # CLI
 clap = { version = "4.6.0", features = ["derive", "env"] }
@@ -173,6 +174,9 @@ config = "0.15.22"
 
 # Async streaming for large file downloads
 futures = "0.3.32"
+
+# Progress bars for long-running operations
+indicatif = "0.17.11"
 
 # Regex for hashcat output parsing
 regex = "1.12.3"
@@ -188,11 +192,14 @@ reqwest = { version = "0.13.2", default-features = false, features = [
 serde      = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.149"
 
+# Cross-platform service management (systemd, launchd, sc.exe)
+service-manager = "0.11.0"
+
 # Checksums for download verification
 sha2 = "0.11.0"
 
 # Platform info
-sysinfo = "0.35"
+sysinfo = "0.38"
 
 # Error handling
 thiserror = "2.0.18"
